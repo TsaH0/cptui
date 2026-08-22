@@ -108,7 +108,7 @@ impl App {
         // Editor / url / run keys act on the selected problem regardless of focus.
         match key.code {
             KeyCode::Char('o') => {
-                self.open_editor();
+                self.request_editor();
                 return;
             }
             KeyCode::Char('b') => {
@@ -377,7 +377,9 @@ impl App {
         }
     }
 
-    fn open_editor(&mut self) {
+    /// Stage an editor launch: ensure the source file exists, then hand the
+    /// path to the main run loop (which owns the terminal) via `pending_editor`.
+    fn request_editor(&mut self) {
         let Some(p) = self.current_problem() else {
             return;
         };
@@ -385,46 +387,7 @@ impl App {
         if !source.exists() {
             let _ = std::fs::write(&source, storage::CPP_TEMPLATE);
         }
-        // Ensure the source is saved on disk before launching.
-        let cmd_name = self.cfg.editor.command.clone();
-        let mut cmd = Command::new(&cmd_name);
-        for a in &self.cfg.editor.args {
-            cmd.arg(a);
-        }
-        cmd.arg(&source);
-
-        // Temporarily restore the terminal, run the editor, then re-enter TUI.
-        let suspend = crate::terminal::suspend_for_external();
-        let result = cmd.status();
-        drop(suspend);
-        match result {
-            Ok(_) => {
-                self.status = "Editor closed".into();
-                if let Some(p) = self.current_problem_mut() {
-                    p.dirty = true;
-                }
-            }
-            Err(e) => {
-                // The configured editor may not exist (e.g. `hx` not on PATH); try
-                // a fallback to `helix`.
-                let mut fb = Command::new("helix");
-                for a in &self.cfg.editor.args {
-                    fb.arg(a);
-                }
-                fb.arg(&source);
-                match fb.status() {
-                    Ok(_) => {
-                        if let Some(p) = self.current_problem_mut() {
-                            p.dirty = true;
-                        }
-                        self.status = "Editor closed (helix)".into();
-                    }
-                    Err(e2) => {
-                        self.status = format!("editor error: {e}; fallback: {e2}");
-                    }
-                }
-            }
-        }
+        self.pending_editor = Some(source);
     }
 
     fn open_url(&mut self) {
@@ -678,7 +641,7 @@ impl App {
                     name: String::new(),
                 }
             }
-            "Open source in editor" => self.open_editor(),
+            "Open source in editor" => self.request_editor(),
             "Open problem URL" => self.open_url(),
             "Remove problem from session" => self.remove_problem(),
             "Switch to problems view" => self.view = View::Problems,

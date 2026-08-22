@@ -12,6 +12,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event};
 use std::io;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -126,6 +127,10 @@ pub struct App {
     pub command_query: Option<String>,
     pub command_sel: usize,
     pub should_quit: bool,
+    /// Set by the 'o' key to request an editor launch; the main run loop
+    /// performs it (it owns the terminal) so the screen can be fully repainted
+    /// after the editor exits.
+    pub pending_editor: Option<PathBuf>,
 
     companion_rx: Option<tmpsc::UnboundedReceiver<CompanionEvent>>,
     result_rx: mpsc::Receiver<AppEvent>,
@@ -166,6 +171,7 @@ impl App {
             command_query: None,
             command_sel: 0,
             should_quit: false,
+            pending_editor: None,
             companion_rx: None,
             result_rx: mpsc::channel().1,
             run_tx: None,
@@ -226,8 +232,60 @@ impl App {
                     _ => {}
                 }
             }
+
+            // Editor launch is handled here (not in handle_key) because the
+            // terminal guard lives in this scope. We suspend the TUI, run the
+            // editor on the real terminal, then restore + force a full repaint
+            // so no stale/garbled state leaks into the post-editor frame.
+            if let Some(src) = self.pending_editor.take() {
+                self.launch_editor(guard, src)?;
+            }
         }
         self.persist_session();
+        Ok(())
+    }
+
+    /// Run the external editor for `src`, restoring the terminal cleanly after.
+    ///
+    /// Order: leave alt screen + disable raw mode + show cursor (so the editor
+    /// gets a normal terminal), wait for it to exit, then re-enter alt screen +
+    /// raw mode and force a full repaint via `autoresize` + `clear`.
+    fn launch_editor(&mut self, guard: &mut TerminalGuard, src: PathBuf) -> io::Result<()> {
+        let cmd_name = self.cfg.editor.command.clone();
+        let args = self.cfg.editor.args.clone();
+
+        match run_editor_bin(guard, &cmd_name, &args, &src) {
+            Ok(status) => {
+                if let Some(p) = self.current_problem_mut() {
+                    p.dirty = true;
+                }
+                self.status = if status.success() {
+                    "Editor closed".to_string()
+                } else {
+                    format!("editor exited with {status}")
+                };
+            }
+            Err(e) => {
+                // Configured editor missing (e.g. `hx` not on PATH): try helix.
+                if crate::config::which("helix").is_some() {
+                    match run_editor_bin(guard, "helix", &args, &src) {
+                        Ok(status) => {
+                            if let Some(p) = self.current_problem_mut() {
+                                p.dirty = true;
+                            }
+                            self.status = if status.success() {
+                                "Editor closed (helix)".to_string()
+                            } else {
+                                format!("helix exited with {status}")
+                            };
+                        }
+                        Err(e2) => self.status = format!("editor error: {e}; helix: {e2}"),
+                    }
+                } else {
+                    self.status = format!("editor error: {e}; no 'helix' fallback");
+                }
+            }
+        }
         Ok(())
     }
 
@@ -479,4 +537,29 @@ fn run_job(cfg: &Config, req: &RunRequest, tx: mpsc::Sender<AppEvent>) {
     let _ = tx.send(AppEvent::RunFinished {
         problem_id: req.problem_id.clone(),
     });
+}
+
+/// Spawn an external editor binary, suspending the TUI for its duration and
+/// forcing a full repaint on return. Only borrows the terminal guard.
+fn run_editor_bin(
+    guard: &mut TerminalGuard,
+    bin: &str,
+    args: &[String],
+    src: &std::path::Path,
+) -> io::Result<std::process::ExitStatus> {
+    let suspend = crate::terminal::suspend_for_external();
+    let mut cmd = Command::new(bin);
+    for a in args {
+        cmd.arg(a);
+    }
+    cmd.arg(src);
+    let status = cmd.status();
+    drop(suspend);
+    // Re-entered the alternate screen above (via the suspend guard's Drop).
+    // Force the next ratatui draw to be a full repaint: the alternate-screen
+    // buffer was empty on re-entry, so without clear() the internal diff buffer
+    // would skip drawing and leave a blank/stale screen.
+    let _ = guard.terminal.autoresize();
+    guard.terminal.clear()?;
+    status
 }

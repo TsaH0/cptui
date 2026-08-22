@@ -1,7 +1,7 @@
 //! Terminal setup/teardown with RAII and panic hook for safe restore.
 
 use crossterm::{
-    execute,
+    cursor, execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::backend::CrosstermBackend;
@@ -71,12 +71,17 @@ impl Drop for TerminalGuard {
 /// it manipulates the terminal directly via crossterm. Use it from places that
 /// do not own the guard (e.g. key handlers).
 pub fn suspend_for_external() -> SuspendGuard {
-    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    let mut out = io::stdout();
+    // Leave the alternate screen and cooked mode, and show the cursor so the
+    // external program (editor) gets a normal, usable terminal.
+    let _ = execute!(out, LeaveAlternateScreen);
     let _ = disable_raw_mode();
+    let _ = execute!(out, cursor::Show);
     SuspendGuard
 }
 
 /// Guard whose drop re-enters the alternate screen / raw mode after an editor.
+/// The cursor is left visible; ratatui re-hides it on the next draw.
 pub struct SuspendGuard;
 
 impl Drop for SuspendGuard {
