@@ -73,8 +73,7 @@ fn draw_titlebar(f: &mut Frame, area: Rect, app: &App) {
         Span::styled(
             " CPTUI ",
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" │ "),
@@ -94,7 +93,7 @@ fn draw_titlebar(f: &mut Frame, area: Rect, app: &App) {
         Span::raw("    "),
         Span::styled(elapsed, Style::default().fg(Color::Blue)),
     ]);
-    let p = Paragraph::new(title).style(Style::default().bg(Color::Black));
+    let p = Paragraph::new(title);
     f.render_widget(p, area);
 }
 
@@ -129,7 +128,7 @@ fn draw_keybar(f: &mut Frame, area: Rect, app: &App) {
     }
     let p = Paragraph::new(Line::from(Span::styled(
         line,
-        Style::default().fg(Color::Black).bg(Color::DarkGray),
+        Style::default().add_modifier(Modifier::DIM),
     )));
     f.render_widget(p, area);
 }

@@ -161,7 +161,7 @@ fn draw_text_area(f: &mut Frame, area: Rect, editor: &TextEditor, focused: bool)
                 Span::raw(left),
                 Span::styled(
                     cur.to_string(),
-                    Style::default().bg(Color::Cyan).fg(Color::Black),
+                    Style::default().add_modifier(Modifier::REVERSED),
                 ),
                 Span::raw(right),
             ]));
@@ -175,7 +175,7 @@ fn draw_text_area(f: &mut Frame, area: Rect, editor: &TextEditor, focused: bool)
         if focused {
             lines.push(Line::from(Span::styled(
                 " ",
-                Style::default().bg(Color::Cyan),
+                Style::default().add_modifier(Modifier::REVERSED),
             )));
         } else {
             lines.push(Line::from(""));
@@ -217,10 +217,10 @@ fn draw_add_problem(f: &mut Frame, area: Rect, name: &str) {
         Span::styled(
             name,
             Style::default()
-                .fg(Color::White)
+                .fg(Color::Reset)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("█", Style::default().bg(Color::Cyan)),
+        Span::styled(" ", Style::default().add_modifier(Modifier::REVERSED)),
     ]))
     .block(block);
     f.render_widget(para, popup);

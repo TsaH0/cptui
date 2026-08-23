@@ -42,7 +42,7 @@ pub fn draw_problems(f: &mut Frame, area: Rect, app: &App) {
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(Color::Reset)
             };
             ListItem::new(Line::from(vec![
                 Span::raw(format!("{marker} ")),

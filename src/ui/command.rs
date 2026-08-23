@@ -28,8 +28,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .map(|(i, c)| {
             let style = if i == sel {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::REVERSED)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -57,7 +56,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(q),
-            Span::styled("█", Style::default().bg(Color::Cyan)),
+            Span::styled(" ", Style::default().add_modifier(Modifier::REVERSED)),
         ])),
         layout[0],
     );
