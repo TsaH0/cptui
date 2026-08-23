@@ -93,9 +93,18 @@ fn doctor(paths: &config::Paths, cfg: &config::Config) -> Result<()> {
 
     println!();
     check_tool("g++", cfg.cpp.compiler.as_str());
-    check_editor(&cfg.editor.command);
     check_tool("clangd", "clangd");
     check_tool("clang-format", "clang-format");
+
+    println!();
+    println!("editors:");
+    check_editor_pair("o (Helix)", &cfg.editors.helix, &cfg.editors.helix_terminal);
+    check_editor_pair(
+        "v (Neovim)",
+        &cfg.editors.neovim,
+        &cfg.editors.neovim_terminal,
+    );
+    println!("  (a non-empty terminal launches the editor in its own window, non-blocking)");
 
     println!();
     println!(
@@ -129,15 +138,24 @@ fn check_tool(label: &str, cmd: &str) {
     }
 }
 
-fn check_editor(cmd: &str) {
-    if let Some(p) = config::which(cmd) {
-        println!("  ✓ editor: {} ({})", cmd, p.display());
-        return;
+fn check_editor_pair(label: &str, editor: &str, terminal: &str) {
+    let ed_loc = config::which(editor).or_else(|| {
+        if editor == "hx" {
+            config::which("helix")
+        } else {
+            None
+        }
+    });
+    match &ed_loc {
+        Some(p) => println!("  ✓ {label}: {} ({})", editor, p.display()),
+        None => println!("  ✗ {label}: '{editor}' not found in PATH"),
     }
-    if config::which("helix").is_some() {
-        println!("  ~ editor: '{cmd}' not on PATH, but 'helix' available as fallback");
+    if terminal.is_empty() {
+        println!("      terminal: (none — opens in-place, blocking)");
+    } else if config::which(terminal).is_some() {
+        println!("      terminal: {terminal} (separate window, non-blocking)");
     } else {
-        println!("  ✗ editor: '{cmd}' not found (and no 'helix' fallback)");
+        println!("      terminal: {terminal} NOT FOUND in PATH");
     }
 }
 

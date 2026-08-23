@@ -40,20 +40,45 @@ impl Default for EditorConfig {
 /// Extra editor commands reachable via dedicated keys (e.g. `v` for neovim).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorsConfig {
+    /// `o` key: editor command (e.g. `hx`).
+    #[serde(default = "default_helix")]
+    pub helix: String,
+    /// Terminal emulator to launch the helix editor in (empty = in-place).
+    #[serde(default = "default_foot")]
+    pub helix_terminal: String,
+    /// `v` key: editor command (e.g. `nvim`).
     #[serde(default = "default_neovim")]
     pub neovim: String,
+    /// Terminal emulator to launch the neovim editor in (empty = in-place).
+    #[serde(default = "default_alacritty")]
+    pub neovim_terminal: String,
 }
 
 impl Default for EditorsConfig {
     fn default() -> Self {
         Self {
+            helix: default_helix(),
+            helix_terminal: default_foot(),
             neovim: default_neovim(),
+            neovim_terminal: default_alacritty(),
         }
     }
 }
 
+fn default_helix() -> String {
+    "hx".to_string()
+}
+
+fn default_foot() -> String {
+    "footclient".to_string()
+}
+
 fn default_neovim() -> String {
     "nvim".to_string()
+}
+
+fn default_alacritty() -> String {
+    "alacritty".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -131,8 +131,8 @@ pub struct App {
     /// the main run loop performs it (it owns the terminal) so the screen can
     /// be fully repainted after the editor exits. Holds the source path plus
     /// the editor command to run.
-    pub pending_editor: Option<(PathBuf, String)>,
-
+    pub pending_editor: Option<(PathBuf, String, String)>,
+    /// (source path, editor command, terminal emulator to launch it in; "" = in-place).
     companion_rx: Option<tmpsc::UnboundedReceiver<CompanionEvent>>,
     result_rx: mpsc::Receiver<AppEvent>,
     pub(crate) run_tx: Option<tmpsc::UnboundedSender<RunRequest>>,
@@ -238,8 +238,8 @@ impl App {
             // terminal guard lives in this scope. We suspend the TUI, run the
             // editor on the real terminal, then restore + force a full repaint
             // so no stale/garbled state leaks into the post-editor frame.
-            if let Some((src, command)) = self.pending_editor.take() {
-                self.launch_editor(guard, src, command)?;
+            if let Some((src, command, terminal)) = self.pending_editor.take() {
+                self.launch_editor(guard, src, command, terminal)?;
             }
         }
         self.persist_session();
@@ -251,12 +251,22 @@ impl App {
     /// Order: leave alt screen + disable raw mode + show cursor (so the editor
     /// gets a normal terminal), wait for it to exit, then re-enter alt screen +
     /// raw mode and force a full repaint via `autoresize` + `clear`.
+    /// Launch the editor for `src`. If `terminal` is non-empty, the editor is
+    /// launched in a **separate terminal window** (e.g. `foot -e hx <file>`,
+    /// `alacritty -e nvim <file>`) and this method returns immediately without
+    /// blocking the TUI. If `terminal` is empty, the editor runs in-place:
+    /// the TUI is suspended, the editor takes over the terminal, and on exit the
+    /// TUI is restored + fully repainted.
     fn launch_editor(
         &mut self,
         guard: &mut TerminalGuard,
         src: PathBuf,
         command: String,
+        terminal: String,
     ) -> io::Result<()> {
+        if !terminal.is_empty() {
+            return self.launch_editor_in_terminal(src, command, terminal);
+        }
         let args = self.cfg.editor.args.clone();
 
         match run_editor_bin(guard, &command, &args, &src) {
@@ -291,6 +301,53 @@ impl App {
                 } else {
                     self.status = format!("editor error: {e}; command: {command}");
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Spawn `<terminal> -e <command> <src>` as a detached new terminal window.
+    /// Non-blocking: the TUI keeps running while the editor runs elsewhere.
+    fn launch_editor_in_terminal(
+        &mut self,
+        src: PathBuf,
+        command: String,
+        terminal: String,
+    ) -> io::Result<()> {
+        use std::os::unix::process::CommandExt;
+        if crate::config::which(&terminal).is_none() {
+            self.status = format!("terminal '{terminal}' not found in PATH");
+            return Ok(());
+        }
+        if crate::config::which(&command).is_none()
+            && !(command == "hx" && crate::config::which("helix").is_some())
+        {
+            self.status = format!("editor '{command}' not found in PATH");
+            return Ok(());
+        }
+        // Use the `helix` binary directly when `hx` isn't on PATH.
+        let real_cmd = if command == "hx" && crate::config::which("hx").is_none() {
+            "helix".to_string()
+        } else {
+            command.clone()
+        };
+
+        let mut cmd = Command::new(&terminal);
+        cmd.arg("-e").arg(&real_cmd).arg(&src);
+        // Put the new terminal in its own process group so it does not receive
+        // signals meant for the TUI and survives independently.
+        cmd.process_group(0);
+        match cmd.spawn() {
+            Ok(_child) => {
+                // Detached: do not wait. The child terminal runs the editor in a
+                // separate window; mark the problem dirty so the next run recompiles.
+                if let Some(p) = self.current_problem_mut() {
+                    p.dirty = true;
+                }
+                self.status = format!("Opened {real_cmd} in {terminal}");
+            }
+            Err(e) => {
+                self.status = format!("failed to launch {terminal}: {e}");
             }
         }
         Ok(())

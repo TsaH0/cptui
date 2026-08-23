@@ -28,7 +28,7 @@ Competitive Companion, in your terminal.
 - **Verdicts**: `AC` / `WA` / `TLE` / `RE` / `CE`, with Input/Expected/Output/Diff/stderr inspection.
 - **Judge** — normalizes CRLF, trailing whitespace, trailing blank lines; token-wise compare.
 - **Sessions** persist across restarts (selected problem/test, ordering, status).
-- **Editor launch** — `o` opens `main.cpp` in Helix (suspends the TUI, restores + full repaint on return).
+- **Editor launch** — `o` opens `main.cpp` in Helix (footclient window), `v` in Neovim (alacritty window); each opens in its own terminal window, non-blocking. Configurable per editor.
 - **XDG paths** for config / cache / state / data.
 - Robust terminal handling (RAII + panic hook).
 
@@ -74,8 +74,8 @@ extension. Port `27121` is a CC default, so it works with no extra configuration
 | `Enter` | select / open detail |
 | `r` / `R` | run selected test / run all |
 | `a`/`e`/`d`/`y` | add / edit / delete / duplicate testcase |
-:| `o` | open source in Helix |
-| `v` | open source in Neovim |
+| `o` | open source in Helix (footclient window) |
+| `v` | open source in Neovim (alacritty window) |
 | `b` | open problem URL |
 | `n` / `x` | add problem / remove from session |
 | `m` | cycle local status |
@@ -90,11 +90,13 @@ extension. Port `27121` is a CC default, so it works with no extra configuration
 ```toml
 workspace = "~/cp"
 
-:[editor]
-command = "hx"
-
 [editors]
+# `o` opens Helix in its own terminal window.
+helix = "hx"
+helix_terminal = "footclient"
+# `v` opens Neovim in its own terminal window.
 neovim = "nvim"
+neovim_terminal = "alacritty"
 
 [companion]
 enabled = true
