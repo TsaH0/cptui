@@ -11,6 +11,8 @@ pub struct Config {
     #[serde(default)]
     pub editor: EditorConfig,
     #[serde(default)]
+    pub editors: EditorsConfig,
+    #[serde(default)]
     pub companion: CompanionConfig,
     #[serde(default)]
     pub cpp: CppConfig,
@@ -33,6 +35,25 @@ impl Default for EditorConfig {
             args: vec![],
         }
     }
+}
+
+/// Extra editor commands reachable via dedicated keys (e.g. `v` for neovim).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditorsConfig {
+    #[serde(default = "default_neovim")]
+    pub neovim: String,
+}
+
+impl Default for EditorsConfig {
+    fn default() -> Self {
+        Self {
+            neovim: default_neovim(),
+        }
+    }
+}
+
+fn default_neovim() -> String {
+    "nvim".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +156,7 @@ impl Default for Config {
         Config {
             workspace: default_workspace(),
             editor: EditorConfig::default(),
+            editors: EditorsConfig::default(),
             companion: CompanionConfig::default(),
             cpp: CppConfig::default(),
             runner: RunnerConfig::default(),

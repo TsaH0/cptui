@@ -127,10 +127,11 @@ pub struct App {
     pub command_query: Option<String>,
     pub command_sel: usize,
     pub should_quit: bool,
-    /// Set by the 'o' key to request an editor launch; the main run loop
-    /// performs it (it owns the terminal) so the screen can be fully repainted
-    /// after the editor exits.
-    pub pending_editor: Option<PathBuf>,
+    /// Set by the 'o' (helix) or 'v' (neovim) key to request an editor launch;
+    /// the main run loop performs it (it owns the terminal) so the screen can
+    /// be fully repainted after the editor exits. Holds the source path plus
+    /// the editor command to run.
+    pub pending_editor: Option<(PathBuf, String)>,
 
     companion_rx: Option<tmpsc::UnboundedReceiver<CompanionEvent>>,
     result_rx: mpsc::Receiver<AppEvent>,
@@ -237,8 +238,8 @@ impl App {
             // terminal guard lives in this scope. We suspend the TUI, run the
             // editor on the real terminal, then restore + force a full repaint
             // so no stale/garbled state leaks into the post-editor frame.
-            if let Some(src) = self.pending_editor.take() {
-                self.launch_editor(guard, src)?;
+            if let Some((src, command)) = self.pending_editor.take() {
+                self.launch_editor(guard, src, command)?;
             }
         }
         self.persist_session();
@@ -250,24 +251,30 @@ impl App {
     /// Order: leave alt screen + disable raw mode + show cursor (so the editor
     /// gets a normal terminal), wait for it to exit, then re-enter alt screen +
     /// raw mode and force a full repaint via `autoresize` + `clear`.
-    fn launch_editor(&mut self, guard: &mut TerminalGuard, src: PathBuf) -> io::Result<()> {
-        let cmd_name = self.cfg.editor.command.clone();
+    fn launch_editor(
+        &mut self,
+        guard: &mut TerminalGuard,
+        src: PathBuf,
+        command: String,
+    ) -> io::Result<()> {
         let args = self.cfg.editor.args.clone();
 
-        match run_editor_bin(guard, &cmd_name, &args, &src) {
+        match run_editor_bin(guard, &command, &args, &src) {
             Ok(status) => {
                 if let Some(p) = self.current_problem_mut() {
                     p.dirty = true;
                 }
                 self.status = if status.success() {
-                    "Editor closed".to_string()
+                    format!("Editor closed ({command})")
                 } else {
-                    format!("editor exited with {status}")
+                    format!("{command} exited with {status}")
                 };
             }
             Err(e) => {
-                // Configured editor missing (e.g. `hx` not on PATH): try helix.
-                if crate::config::which("helix").is_some() {
+                // The configured editor may be a name not on PATH (e.g. `hx`).
+                // Only fall back to the `helix` binary for a helix-style command.
+                let is_helix_cmd = command == "hx" || command == "helix";
+                if is_helix_cmd && crate::config::which("helix").is_some() {
                     match run_editor_bin(guard, "helix", &args, &src) {
                         Ok(status) => {
                             if let Some(p) = self.current_problem_mut() {
@@ -282,7 +289,7 @@ impl App {
                         Err(e2) => self.status = format!("editor error: {e}; helix: {e2}"),
                     }
                 } else {
-                    self.status = format!("editor error: {e}; no 'helix' fallback");
+                    self.status = format!("editor error: {e}; command: {command}");
                 }
             }
         }

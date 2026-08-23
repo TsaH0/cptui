@@ -74,7 +74,8 @@ extension. Port `27121` is a CC default, so it works with no extra configuration
 | `Enter` | select / open detail |
 | `r` / `R` | run selected test / run all |
 | `a`/`e`/`d`/`y` | add / edit / delete / duplicate testcase |
-| `o` | open source in Helix |
+:| `o` | open source in Helix |
+| `v` | open source in Neovim |
 | `b` | open problem URL |
 | `n` / `x` | add problem / remove from session |
 | `m` | cycle local status |
@@ -89,8 +90,11 @@ extension. Port `27121` is a CC default, so it works with no extra configuration
 ```toml
 workspace = "~/cp"
 
-[editor]
+:[editor]
 command = "hx"
+
+[editors]
+neovim = "nvim"
 
 [companion]
 enabled = true

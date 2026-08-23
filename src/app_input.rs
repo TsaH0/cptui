@@ -108,7 +108,13 @@ impl App {
         // Editor / url / run keys act on the selected problem regardless of focus.
         match key.code {
             KeyCode::Char('o') => {
-                self.request_editor();
+                // Open in the configured editor (default Helix).
+                self.request_editor_for(self.cfg.editor.command.clone());
+                return;
+            }
+            KeyCode::Char('v') => {
+                // Open in Neovim.
+                self.request_editor_for(self.cfg.editors.neovim.clone());
                 return;
             }
             KeyCode::Char('b') => {
@@ -379,7 +385,11 @@ impl App {
 
     /// Stage an editor launch: ensure the source file exists, then hand the
     /// path to the main run loop (which owns the terminal) via `pending_editor`.
-    fn request_editor(&mut self) {
+    /// Stage an editor launch for the current problem's source, using `command`
+    /// as the editor. Ensures the source file exists, then hands the path +
+    /// command to the main run loop (which owns the terminal) via
+    /// `pending_editor`.
+    fn request_editor_for(&mut self, command: String) {
         let Some(p) = self.current_problem() else {
             return;
         };
@@ -387,7 +397,7 @@ impl App {
         if !source.exists() {
             let _ = std::fs::write(&source, storage::CPP_TEMPLATE);
         }
-        self.pending_editor = Some(source);
+        self.pending_editor = Some((source, command));
     }
 
     fn open_url(&mut self) {
@@ -605,6 +615,7 @@ impl App {
             "Edit testcase",
             "Add problem",
             "Open source in editor",
+            "Open source in Neovim",
             "Open problem URL",
             "Remove problem from session",
             "Switch to problems view",
@@ -641,7 +652,8 @@ impl App {
                     name: String::new(),
                 }
             }
-            "Open source in editor" => self.request_editor(),
+            "Open source in editor" => self.request_editor_for(self.cfg.editor.command.clone()),
+            "Open source in Neovim" => self.request_editor_for(self.cfg.editors.neovim.clone()),
             "Open problem URL" => self.open_url(),
             "Remove problem from session" => self.remove_problem(),
             "Switch to problems view" => self.view = View::Problems,
