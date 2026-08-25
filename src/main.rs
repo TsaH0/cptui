@@ -100,6 +100,7 @@ fn doctor(paths: &config::Paths, cfg: &config::Config) -> Result<()> {
     println!("debugger:");
     println!("  adapter: {}", cfg.debug.adapter);
     check_tool("  debugger", cfg.debug.debugger_command.as_str());
+    check_tool("  terminal", cfg.debug.debugger_terminal.as_str());
 
     println!();
     println!("editors:");

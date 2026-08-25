@@ -65,9 +65,16 @@ pub enum TestField {
     Expected,
 }
 
+/// Debugger destination selected by user.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum DebugTarget {
+    Zed,
+    Pwndbg,
+}
+
 /// Async events delivered into the main loop from background tasks.
 #[derive(Debug)]
-pub enum AppEvent {
+pub(crate) enum AppEvent {
     /// A problem arrived from Competitive Companion.
     Companion {
         task: CompanionTask,
@@ -89,6 +96,9 @@ pub enum AppEvent {
         problem_id: String,
         source: PathBuf,
         problem_dir: PathBuf,
+        target: DebugTarget,
+        wrapper: PathBuf,
+        binary: PathBuf,
     },
     /// Debug preparation failed.
     DebugFailed { problem_id: String, message: String },
@@ -101,6 +111,12 @@ pub enum EditorLaunch {
     InPlace { command: String },
     /// Spawn `<terminal> -e <command> <file>` detached in a new window (non-blocking).
     Terminal { command: String, terminal: String },
+    /// Spawn `<terminal> -e <command> <args>` detached in a new window.
+    TerminalArgs {
+        command: String,
+        terminal: String,
+        args: Vec<String>,
+    },
     /// Spawn `<command> <args>` detached (e.g. `zed <file>` opens a tab in
     /// the running editor; non-blocking, no terminal wrapper).
     Direct { command: String, args: Vec<String> },
@@ -122,6 +138,7 @@ pub(crate) struct DebugRequest {
     pub source: PathBuf,
     pub problem_dir: PathBuf,
     pub input: String,
+    pub target: DebugTarget,
 }
 
 #[derive(Debug, Clone)]
@@ -303,6 +320,11 @@ impl App {
             EditorLaunch::Terminal { command, terminal } => {
                 self.launch_editor_in_terminal(src, command, terminal)
             }
+            EditorLaunch::TerminalArgs {
+                command,
+                terminal,
+                args,
+            } => self.launch_command_in_terminal(command, terminal, args),
             EditorLaunch::Direct { command, args } => self.launch_direct(src, command, args),
             EditorLaunch::InPlace { command } => self.launch_editor_inplace(guard, src, command),
         }
@@ -396,6 +418,16 @@ impl App {
         command: String,
         terminal: String,
     ) -> io::Result<()> {
+        self.launch_command_in_terminal(command, terminal, vec![src.display().to_string()])
+    }
+
+    /// Spawn `<terminal> -e <command> <args>` detached and non-blocking.
+    fn launch_command_in_terminal(
+        &mut self,
+        command: String,
+        terminal: String,
+        args: Vec<String>,
+    ) -> io::Result<()> {
         use std::os::unix::process::CommandExt;
         if crate::config::which(&terminal).is_none() {
             self.status = format!("terminal '{terminal}' not found in PATH");
@@ -404,10 +436,9 @@ impl App {
         if crate::config::which(&command).is_none()
             && !(command == "hx" && crate::config::which("helix").is_some())
         {
-            self.status = format!("editor '{command}' not found in PATH");
+            self.status = format!("command '{command}' not found in PATH");
             return Ok(());
         }
-        // Use the `helix` binary directly when `hx` isn't on PATH.
         let real_cmd = if command == "hx" && crate::config::which("hx").is_none() {
             "helix".to_string()
         } else {
@@ -415,14 +446,10 @@ impl App {
         };
 
         let mut cmd = Command::new(&terminal);
-        cmd.arg("-e").arg(&real_cmd).arg(&src);
-        // Put the new terminal in its own process group so it does not receive
-        // signals meant for the TUI and survives independently.
+        cmd.arg("-e").arg(&real_cmd).args(args);
         cmd.process_group(0);
         match cmd.spawn() {
             Ok(_child) => {
-                // Detached: do not wait. The child terminal runs the editor in a
-                // separate window; mark the problem dirty so the next run recompiles.
                 if let Some(p) = self.current_problem_mut() {
                     p.dirty = true;
                 }
@@ -497,20 +524,48 @@ impl App {
                     problem_id,
                     source,
                     problem_dir,
+                    target,
+                    wrapper,
+                    binary,
                 } => {
-                    self.pending_editor = Some((
-                        source.clone(),
-                        EditorLaunch::Direct {
-                            command: self.cfg.editors.zed.clone(),
-                            args: vec![
-                                "--existing".to_string(),
-                                problem_dir.display().to_string(),
-                                source.display().to_string(),
-                            ],
-                        },
-                    ));
-                    self.status =
-                        format!("Debug testcase ready for {problem_id}; start cptui debug in Zed");
+                    match target {
+                        DebugTarget::Zed => {
+                            self.pending_editor = Some((
+                                source.clone(),
+                                EditorLaunch::Direct {
+                                    command: self.cfg.editors.zed.clone(),
+                                    args: vec![
+                                        "--existing".to_string(),
+                                        problem_dir.display().to_string(),
+                                        source.display().to_string(),
+                                    ],
+                                },
+                            ));
+                        }
+                        DebugTarget::Pwndbg => {
+                            let exec_wrapper = storage::debugger_exec_wrapper_command(&wrapper);
+                            self.pending_editor = Some((
+                                binary.clone(),
+                                EditorLaunch::TerminalArgs {
+                                    command: self.cfg.debug.debugger_command.clone(),
+                                    terminal: self.cfg.debug.debugger_terminal.clone(),
+                                    args: vec![
+                                        "-ex".to_string(),
+                                        exec_wrapper,
+                                        binary.display().to_string(),
+                                    ],
+                                },
+                            ));
+                        }
+                    }
+                    self.status = match target {
+                        DebugTarget::Zed => format!(
+                            "Testcase ready; Zed profile available: cptui: Debug selected testcase"
+                        ),
+                        DebugTarget::Pwndbg => format!(
+                            "Pwndbg ready for testcase {problem_id}; set breakpoints, then run"
+                        ),
+                    };
                 }
                 AppEvent::DebugFailed {
                     problem_id,
@@ -791,6 +846,9 @@ fn debug_job(cfg: &Config, req: &DebugRequest, tx: mpsc::Sender<AppEvent>) {
         problem_id: req.problem_id.clone(),
         source: req.source.clone(),
         problem_dir: req.problem_dir.clone(),
+        target: req.target,
+        wrapper: wrapper_path,
+        binary: binary_path,
     });
 }
 

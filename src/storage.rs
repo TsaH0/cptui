@@ -142,13 +142,21 @@ pub fn write_zed_debug_config(
         "gdb_path": debugger.display().to_string(),
         "gdb_args": [
             "-ex",
-            format!("set exec-wrapper {}", shell_quote(wrapper.to_string_lossy().as_ref()))
+            debugger_exec_wrapper_command(wrapper)
         ],
         "stopOnEntry": false
     }));
     let raw = serde_json::to_string_pretty(&profiles)?;
     std::fs::write(&path, format!("{raw}\n"))?;
     Ok(())
+}
+
+/// Return GDB command that redirects only the debuggee through wrapper.
+pub fn debugger_exec_wrapper_command(wrapper: &Path) -> String {
+    format!(
+        "set exec-wrapper {}",
+        shell_quote(wrapper.to_string_lossy().as_ref())
+    )
 }
 
 fn shell_quote(value: &str) -> String {

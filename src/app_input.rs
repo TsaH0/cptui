@@ -1,6 +1,6 @@
 //! Keyboard input handling for the App, split out for readability.
 
-use crate::app::{App, Dialog, Focus, TestField, View};
+use crate::app::{App, DebugTarget, Dialog, Focus, TestField, View};
 use crate::app::{DebugRequest, JobRequest, RunRequest};
 use crate::model::{ProblemStatus, TestKind, Testcase, Verdict};
 use crate::storage;
@@ -235,7 +235,10 @@ impl App {
                 self.duplicate_test();
             }
             KeyCode::Char('D') => {
-                self.debug_selected_test();
+                self.debug_selected_test(DebugTarget::Zed);
+            }
+            KeyCode::Char('P') => {
+                self.debug_selected_test(DebugTarget::Pwndbg);
             }
             KeyCode::Enter => {
                 if n > 0 {
@@ -440,7 +443,7 @@ impl App {
     }
 
     /// Prepare currently selected testcase for Zed DAP debugging.
-    fn debug_selected_test(&mut self) {
+    fn debug_selected_test(&mut self, target: DebugTarget) {
         let Some(p) = self.current_problem() else {
             self.status = "No problem selected".into();
             return;
@@ -454,6 +457,7 @@ impl App {
             source: p.source_path(),
             problem_dir: p.dir.clone(),
             input: tc.input.clone(),
+            target,
         };
         if let Some(tx) = &self.run_tx {
             let _ = tx.send(JobRequest::Debug(request));
@@ -674,7 +678,8 @@ impl App {
         vec![
             "Run all tests",
             "Run selected test",
-            "Debug selected testcase",
+            "Debug selected testcase in Zed",
+            "Debug selected testcase in Pwndbg",
             "Add testcase",
             "Edit testcase",
             "Add problem",
@@ -698,7 +703,8 @@ impl App {
         match cmds[idx] {
             "Run all tests" => self.dispatch_run(true),
             "Run selected test" => self.dispatch_run(false),
-            "Debug selected testcase" => self.debug_selected_test(),
+            "Debug selected testcase in Zed" => self.debug_selected_test(DebugTarget::Zed),
+            "Debug selected testcase in Pwndbg" => self.debug_selected_test(DebugTarget::Pwndbg),
             "Add testcase" => {
                 self.dialog = Dialog::AddTestcase {
                     input: TextEditor::new(String::new()),

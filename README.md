@@ -29,7 +29,7 @@ Competitive Companion, in your terminal.
 - **Judge** — normalizes CRLF, trailing whitespace, trailing blank lines; token-wise compare.
 - **Sessions** persist across restarts (selected problem/test, ordering, status).
 - **Editor launch** — `o` opens `main.cpp` in Helix (footclient window), `v` in Neovim (alacritty window), and `z` in Zed; each is non-blocking. Configurable per editor.
-- **Per-testcase debugging** — In Tests view, `D` writes only currently selected testcase input to `<problem>/.cptui/debug/input.txt` (overwriting it only on `D`), builds a separate `-g -O0` binary, updates `.zed/debug.json`, and opens the source in Zed. Generated GDB profile uses Pwndbg.
+- **Per-testcase debugging** — In Tests view, `D` prepares only currently selected testcase for Zed DAP; `P` prepares the same testcase for an interactive Pwndbg terminal. Both overwrite `<problem>/.cptui/debug/input.txt` only when pressed and build a separate `-g -O0` binary.
 - **XDG paths** for config / cache / state / data.
 - Robust terminal handling (RAII + panic hook).
 
@@ -76,8 +76,10 @@ In the Tests view, select one testcase and press `D`. cptui:
 
 Start that profile from Zed's Debug/New Process UI. The generated profile uses
 Zed's `GDB` adapter with `/usr/bin/pwndbg` (or configured `debugger_command`),
-not vanilla GDB. Press `D` again after selecting another testcase; active debug
-sessions keep the input file they started with.
+not vanilla GDB. GDB's `exec-wrapper` redirects debuggee stdin from `input.txt`.
+For terminal debugging, press `P`; cptui opens Pwndbg in the configured terminal
+with the same wrapper, so set breakpoints and run normally. Press `D` or `P` again
+after selecting another testcase; active debug sessions keep their original input.
 
 ## Keybindings
 
@@ -89,6 +91,7 @@ sessions keep the input file they started with.
 | `Enter` | select / open detail |
 | `r` / `R` | run selected test / run all |
 | `D` | write selected testcase, build debug binary, and open Zed debugger profile |
+| `P` | write selected testcase, build debug binary, and open Pwndbg terminal |
 | `a`/`e`/`d`/`y` | add / edit / delete / duplicate testcase |
 | `o` | open source in Helix (footclient window) |
 | `v` | open source in Neovim (alacritty window) |
@@ -120,6 +123,8 @@ zed = "zed"
 # Zed adapter label. GDB profile uses Pwndbg as its GDB-compatible executable.
 adapter = "GDB"
 debugger_command = "pwndbg"
+# `P` opens Pwndbg here.
+debugger_terminal = "footclient"
 
 [companion]
 enabled = true
