@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
-    let w = area.width.min(60).max(40);
+    let w = area.width.clamp(40, 60);
     let h = 14;
     let popup = crate::ui::centered_rect(w, h, area);
     f.render_widget(Clear, popup);

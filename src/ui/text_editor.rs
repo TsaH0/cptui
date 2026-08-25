@@ -88,12 +88,10 @@ impl TextEditor {
         } else {
             let line = &mut self.lines[row];
             let mut new_line = String::new();
-            let mut idx = 0;
-            for ch in line.chars() {
+            for (idx, ch) in line.chars().enumerate() {
                 if idx != col - 1 {
                     new_line.push(ch);
                 }
-                idx += 1;
             }
             *line = new_line;
             self.cursor.1 -= 1;
@@ -106,12 +104,10 @@ impl TextEditor {
         if col < line_len {
             let line = &mut self.lines[row];
             let mut new_line = String::new();
-            let mut idx = 0;
-            for ch in line.chars() {
+            for (idx, ch) in line.chars().enumerate() {
                 if idx != col {
                     new_line.push(ch);
                 }
-                idx += 1;
             }
             *line = new_line;
         } else if row + 1 < self.lines.len() {

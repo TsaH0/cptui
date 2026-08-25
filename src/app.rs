@@ -75,12 +75,6 @@ pub(crate) enum DebugTarget {
 /// Async events delivered into the main loop from background tasks.
 #[derive(Debug)]
 pub(crate) enum AppEvent {
-    /// A problem arrived from Competitive Companion.
-    Companion {
-        task: CompanionTask,
-        batch_size: u64,
-        index: u64,
-    },
     /// Compilation failed for a problem.
     CompileFailed { problem_id: String, stderr: String },
     /// Compilation succeeded; a testcase finished.
@@ -487,7 +481,6 @@ impl App {
     fn drain_results(&mut self) {
         while let Ok(ev) = self.result_rx.try_recv() {
             match ev {
-                AppEvent::Companion { .. } => { /* handled in drain_companion */ }
                 AppEvent::CompileFailed { problem_id, stderr } => {
                     if let Some(p) = self.find_problem_mut(&problem_id) {
                         p.compile_error = Some(stderr.clone());
@@ -559,9 +552,10 @@ impl App {
                         }
                     }
                     self.status = match &target {
-                        DebugTarget::Zed => format!(
+                        DebugTarget::Zed => {
                             "Testcase ready; Zed profile available: cptui: Debug selected testcase"
-                        ),
+                                .to_string()
+                        }
                         DebugTarget::GdbTerminal { .. } => format!(
                             "GDB ready for testcase {problem_id}; set breakpoints, then run"
                         ),

@@ -54,8 +54,8 @@ fn draw_editor(
     expected: &TextEditor,
     focus: TestField,
 ) {
-    let w = area.width.min(70).max(40);
-    let h = area.height.min(24).max(12);
+    let w = area.width.clamp(40, 70);
+    let h = area.height.clamp(12, 24);
     let popup = crate::ui::centered_rect(w, h, area);
     f.render_widget(Clear, popup);
 

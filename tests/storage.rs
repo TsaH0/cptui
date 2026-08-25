@@ -9,9 +9,10 @@ use std::path::Path;
 use tempfile::TempDir;
 
 fn cfg_in(dir: &Path) -> Config {
-    let mut c = Config::default();
-    c.workspace = dir.display().to_string();
-    c
+    Config {
+        workspace: dir.display().to_string(),
+        ..Default::default()
+    }
 }
 
 fn sample_meta(id: &str) -> ProblemMeta {
