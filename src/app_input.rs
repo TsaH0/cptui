@@ -123,6 +123,11 @@ impl App {
                 );
                 return;
             }
+            KeyCode::Char('z') => {
+                // Open directly inside Zed (new tab in the running Zed).
+                self.request_open_in_zed();
+                return;
+            }
             KeyCode::Char('b') => {
                 self.open_url();
                 return;
@@ -403,7 +408,26 @@ impl App {
         if !source.exists() {
             let _ = std::fs::write(&source, storage::CPP_TEMPLATE);
         }
-        self.pending_editor = Some((source, command, terminal));
+        let launch = if terminal.is_empty() {
+            crate::app::EditorLaunch::InPlace { command }
+        } else {
+            crate::app::EditorLaunch::Terminal { command, terminal }
+        };
+        self.pending_editor = Some((source, launch));
+    }
+
+    /// Open the current problem's source directly in Zed (a new tab in the
+    /// running Zed), non-blocking.
+    fn request_open_in_zed(&mut self) {
+        let Some(p) = self.current_problem() else {
+            return;
+        };
+        let source = p.source_path();
+        if !source.exists() {
+            let _ = std::fs::write(&source, storage::CPP_TEMPLATE);
+        }
+        let command = self.cfg.editors.zed.clone();
+        self.pending_editor = Some((source, crate::app::EditorLaunch::Direct { command }));
     }
 
     fn open_url(&mut self) {
@@ -622,6 +646,7 @@ impl App {
             "Add problem",
             "Open source in editor",
             "Open source in Neovim",
+            "Open source in Zed",
             "Open problem URL",
             "Remove problem from session",
             "Switch to problems view",
@@ -666,6 +691,7 @@ impl App {
                 self.cfg.editors.neovim.clone(),
                 self.cfg.editors.neovim_terminal.clone(),
             ),
+            "Open source in Zed" => self.request_open_in_zed(),
             "Open problem URL" => self.open_url(),
             "Remove problem from session" => self.remove_problem(),
             "Switch to problems view" => self.view = View::Problems,

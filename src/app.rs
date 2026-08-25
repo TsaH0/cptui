@@ -86,6 +86,18 @@ pub enum AppEvent {
     RunFinished { problem_id: String },
 }
 
+/// How an editor should be launched for a source file.
+#[derive(Debug, Clone)]
+pub enum EditorLaunch {
+    /// Suspend the TUI, run the editor in-place, then restore + repaint.
+    InPlace { command: String },
+    /// Spawn `<terminal> -e <command> <file>` detached in a new window (non-blocking).
+    Terminal { command: String, terminal: String },
+    /// Spawn `<command> <file>` detached (e.g. `zed <file>` opens a tab in the
+    /// running editor; non-blocking, no terminal wrapper).
+    Direct { command: String },
+}
+
 /// A request to compile and run tests for a problem.
 #[derive(Debug, Clone)]
 pub(crate) struct RunRequest {
@@ -131,7 +143,7 @@ pub struct App {
     /// the main run loop performs it (it owns the terminal) so the screen can
     /// be fully repainted after the editor exits. Holds the source path plus
     /// the editor command to run.
-    pub pending_editor: Option<(PathBuf, String, String)>,
+    pub pending_editor: Option<(PathBuf, EditorLaunch)>,
     /// (source path, editor command, terminal emulator to launch it in; "" = in-place).
     companion_rx: Option<tmpsc::UnboundedReceiver<CompanionEvent>>,
     result_rx: mpsc::Receiver<AppEvent>,
@@ -238,8 +250,8 @@ impl App {
             // terminal guard lives in this scope. We suspend the TUI, run the
             // editor on the real terminal, then restore + force a full repaint
             // so no stale/garbled state leaks into the post-editor frame.
-            if let Some((src, command, terminal)) = self.pending_editor.take() {
-                self.launch_editor(guard, src, command, terminal)?;
+            if let Some((src, launch)) = self.pending_editor.take() {
+                self.launch_editor(guard, src, launch)?;
             }
         }
         self.persist_session();
@@ -261,12 +273,24 @@ impl App {
         &mut self,
         guard: &mut TerminalGuard,
         src: PathBuf,
-        command: String,
-        terminal: String,
+        launch: EditorLaunch,
     ) -> io::Result<()> {
-        if !terminal.is_empty() {
-            return self.launch_editor_in_terminal(src, command, terminal);
+        match launch {
+            EditorLaunch::Terminal { command, terminal } => {
+                self.launch_editor_in_terminal(src, command, terminal)
+            }
+            EditorLaunch::Direct { command } => self.launch_direct(src, command),
+            EditorLaunch::InPlace { command } => self.launch_editor_inplace(guard, src, command),
         }
+    }
+
+    /// Suspend the TUI, run `command src` in-place, restore + repaint on exit.
+    fn launch_editor_inplace(
+        &mut self,
+        guard: &mut TerminalGuard,
+        src: PathBuf,
+        command: String,
+    ) -> io::Result<()> {
         let args = self.cfg.editor.args.clone();
 
         match run_editor_bin(guard, &command, &args, &src) {
@@ -302,6 +326,29 @@ impl App {
                     self.status = format!("editor error: {e}; command: {command}");
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Spawn `command src` detached (e.g. `zed <file>` opens a tab in the
+    /// running editor). Non-blocking: the TUI keeps running.
+    fn launch_direct(&mut self, src: PathBuf, command: String) -> io::Result<()> {
+        use std::os::unix::process::CommandExt;
+        if crate::config::which(&command).is_none() {
+            self.status = format!("{command} not found in PATH");
+            return Ok(());
+        }
+        let mut cmd = Command::new(&command);
+        cmd.arg(&src);
+        cmd.process_group(0);
+        match cmd.spawn() {
+            Ok(_child) => {
+                if let Some(p) = self.current_problem_mut() {
+                    p.dirty = true;
+                }
+                self.status = format!("Opened in {command}");
+            }
+            Err(e) => self.status = format!("failed to launch {command}: {e}"),
         }
         Ok(())
     }

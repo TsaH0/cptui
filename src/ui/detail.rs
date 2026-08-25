@@ -264,8 +264,9 @@ fn help_lines() -> Vec<Line<'static>> {
     lines.push(section("Problems"));
     lines.push(h("n", "add problem manually"));
     lines.push(h("x", "remove problem from session (keeps files)"));
-    lines.push(h("o", "open source in Helix (configured editor)"));
-    lines.push(h("v", "open source in Neovim"));
+    lines.push(h("o", "open source in Helix (footclient window)"));
+    lines.push(h("v", "open source in Neovim (alacritty window)"));
+    lines.push(h("z", "open source in Zed (new tab in running Zed)"));
     lines.push(h("b", "open problem URL in browser"));
     lines.push(h("m", "cycle local status"));
     lines.push(section("Commands"));

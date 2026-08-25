@@ -52,6 +52,9 @@ pub struct EditorsConfig {
     /// Terminal emulator to launch the neovim editor in (empty = in-place).
     #[serde(default = "default_alacritty")]
     pub neovim_terminal: String,
+    /// `z` key: open the source file directly inside Zed (no terminal wrapper).
+    #[serde(default = "default_zed")]
+    pub zed: String,
 }
 
 impl Default for EditorsConfig {
@@ -61,6 +64,7 @@ impl Default for EditorsConfig {
             helix_terminal: default_foot(),
             neovim: default_neovim(),
             neovim_terminal: default_alacritty(),
+            zed: default_zed(),
         }
     }
 }
@@ -79,6 +83,10 @@ fn default_neovim() -> String {
 
 fn default_alacritty() -> String {
     "alacritty".to_string()
+}
+
+fn default_zed() -> String {
+    "zed".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -97,6 +97,8 @@ helix_terminal = "footclient"
 # `v` opens Neovim in its own terminal window.
 neovim = "nvim"
 neovim_terminal = "alacritty"
+# `z` opens the source file directly inside Zed (a new tab in the running Zed).
+zed = "zed"
 
 [companion]
 enabled = true
