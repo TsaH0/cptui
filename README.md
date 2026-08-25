@@ -29,7 +29,7 @@ Competitive Companion, in your terminal.
 - **Judge** — normalizes CRLF, trailing whitespace, trailing blank lines; token-wise compare.
 - **Sessions** persist across restarts (selected problem/test, ordering, status).
 - **Editor launch** — `o` opens `main.cpp` in Helix (footclient window), `v` in Neovim (alacritty window), and `z` in Zed; each is non-blocking. Configurable per editor.
-- **Per-testcase debugging** — In Tests view, `D` prepares only currently selected testcase for Zed DAP; `P` prepares the same testcase for an interactive Pwndbg terminal. Both overwrite `<problem>/.cptui/debug/input.txt` only when pressed and build a separate `-g -O0` binary.
+- **Per-testcase debugging** — In Tests view, `D` prepares the selected testcase for Zed GDB DAP; `P` prepares it for GDB in footclient; `A` prepares it for GDB in alacritty. All overwrite `<problem>/.cptui/debug/input.txt` only when pressed and build a separate `-g -O0` binary.
 - **XDG paths** for config / cache / state / data.
 - Robust terminal handling (RAII + panic hook).
 
@@ -75,10 +75,10 @@ In the Tests view, select one testcase and press `D`. cptui:
 4. opens the source and problem directory in Zed.
 
 Start that profile from Zed's Debug/New Process UI. The generated profile uses
-Zed's `GDB` adapter with `/usr/bin/pwndbg` (or configured `debugger_command`),
-not vanilla GDB. GDB's `exec-wrapper` redirects debuggee stdin from `input.txt`.
-For terminal debugging, press `P`; cptui opens Pwndbg in the configured terminal
-with the same wrapper, so set breakpoints and run normally. Press `D` or `P` again
+Zed's `GDB` adapter with configured `debugger_command` (default `gdb`).
+GDB's `exec-wrapper` redirects debuggee stdin from `input.txt`. For terminal
+debugging, press `P` for footclient or `A` for alacritty; cptui opens GDB with
+the same wrapper, so set breakpoints and run normally. Press `D`, `P`, or `A`
 after selecting another testcase; active debug sessions keep their original input.
 
 ## Keybindings
@@ -91,7 +91,8 @@ after selecting another testcase; active debug sessions keep their original inpu
 | `Enter` | select / open detail |
 | `r` / `R` | run selected test / run all |
 | `D` | write selected testcase, build debug binary, and open Zed debugger profile |
-| `P` | write selected testcase, build debug binary, and open Pwndbg terminal |
+| `P` | write selected testcase, build debug binary, and open GDB in footclient |
+| `A` | write selected testcase, build debug binary, and open GDB in alacritty |
 | `a`/`e`/`d`/`y` | add / edit / delete / duplicate testcase |
 | `o` | open source in Helix (footclient window) |
 | `v` | open source in Neovim (alacritty window) |
@@ -120,11 +121,12 @@ neovim_terminal = "alacritty"
 zed = "zed"
 
 [debug]
-# Zed adapter label. GDB profile uses Pwndbg as its GDB-compatible executable.
+# Zed and terminal sessions use this GDB-compatible command.
 adapter = "GDB"
-debugger_command = "pwndbg"
-# `P` opens Pwndbg here.
+debugger_command = "gdb"
+# `P` uses this terminal; `A` uses debugger_terminal_alt.
 debugger_terminal = "footclient"
+debugger_terminal_alt = "alacritty"
 
 [companion]
 enabled = true

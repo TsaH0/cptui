@@ -238,7 +238,14 @@ impl App {
                 self.debug_selected_test(DebugTarget::Zed);
             }
             KeyCode::Char('P') => {
-                self.debug_selected_test(DebugTarget::Pwndbg);
+                self.debug_selected_test(DebugTarget::GdbTerminal {
+                    terminal: self.cfg.debug.debugger_terminal.clone(),
+                });
+            }
+            KeyCode::Char('A') => {
+                self.debug_selected_test(DebugTarget::GdbTerminal {
+                    terminal: self.cfg.debug.debugger_terminal_alt.clone(),
+                });
             }
             KeyCode::Enter => {
                 if n > 0 {
@@ -679,7 +686,8 @@ impl App {
             "Run all tests",
             "Run selected test",
             "Debug selected testcase in Zed",
-            "Debug selected testcase in Pwndbg",
+            "Debug selected testcase in terminal",
+            "Debug selected testcase in Alacritty",
             "Add testcase",
             "Edit testcase",
             "Add problem",
@@ -704,7 +712,16 @@ impl App {
             "Run all tests" => self.dispatch_run(true),
             "Run selected test" => self.dispatch_run(false),
             "Debug selected testcase in Zed" => self.debug_selected_test(DebugTarget::Zed),
-            "Debug selected testcase in Pwndbg" => self.debug_selected_test(DebugTarget::Pwndbg),
+            "Debug selected testcase in terminal" => {
+                self.debug_selected_test(DebugTarget::GdbTerminal {
+                    terminal: self.cfg.debug.debugger_terminal.clone(),
+                })
+            }
+            "Debug selected testcase in Alacritty" => {
+                self.debug_selected_test(DebugTarget::GdbTerminal {
+                    terminal: self.cfg.debug.debugger_terminal_alt.clone(),
+                })
+            }
             "Add testcase" => {
                 self.dialog = Dialog::AddTestcase {
                     input: TextEditor::new(String::new()),

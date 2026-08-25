@@ -254,8 +254,9 @@ fn help_lines() -> Vec<Line<'static>> {
     lines.push(section("Running"));
     lines.push(h("r", "run selected testcase"));
     lines.push(h("R", "run all testcases"));
-    lines.push(h("D", "debug selected testcase using Zed DAP"));
-    lines.push(h("P", "debug selected testcase in Pwndbg terminal"));
+    lines.push(h("D", "debug selected testcase using Zed GDB DAP"));
+    lines.push(h("P", "debug selected testcase in footclient GDB"));
+    lines.push(h("A", "debug selected testcase in alacritty GDB"));
     lines.push(section("Testcases"));
     lines.push(h("a", "add testcase (custom)"));
     lines.push(h("e", "edit selected testcase"));

@@ -191,11 +191,15 @@ fn default_debug_adapter() -> String {
 }
 
 fn default_debugger_command() -> String {
-    "pwndbg".to_string()
+    "gdb".to_string()
 }
 
 fn default_debugger_terminal() -> String {
     "footclient".to_string()
+}
+
+fn default_debugger_terminal_alt() -> String {
+    "alacritty".to_string()
 }
 
 /// Configuration for Zed's DAP debug handoff.
@@ -204,13 +208,15 @@ pub struct DebugConfig {
     /// Zed debug adapter label.
     #[serde(default = "default_debug_adapter")]
     pub adapter: String,
-    /// GDB-compatible command used by Zed and terminal debugging.
-    /// Defaults to Pwndbg, not vanilla GDB.
+    /// GDB command used by Zed and terminal debugging.
     #[serde(default = "default_debugger_command")]
     pub debugger_command: String,
-    /// Terminal used by the `P` Pwndbg debugging action.
+    /// Terminal used by the `P` terminal debugging action.
     #[serde(default = "default_debugger_terminal")]
     pub debugger_terminal: String,
+    /// Alternate terminal used by the `A` terminal debugging action.
+    #[serde(default = "default_debugger_terminal_alt")]
+    pub debugger_terminal_alt: String,
 }
 
 impl Default for DebugConfig {
@@ -219,6 +225,7 @@ impl Default for DebugConfig {
             adapter: default_debug_adapter(),
             debugger_command: default_debugger_command(),
             debugger_terminal: default_debugger_terminal(),
+            debugger_terminal_alt: default_debugger_terminal_alt(),
         }
     }
 }

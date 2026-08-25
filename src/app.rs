@@ -66,10 +66,10 @@ pub enum TestField {
 }
 
 /// Debugger destination selected by user.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum DebugTarget {
     Zed,
-    Pwndbg,
+    GdbTerminal { terminal: String },
 }
 
 /// Async events delivered into the main loop from background tasks.
@@ -528,7 +528,7 @@ impl App {
                     wrapper,
                     binary,
                 } => {
-                    match target {
+                    match &target {
                         DebugTarget::Zed => {
                             self.pending_editor = Some((
                                 source.clone(),
@@ -542,13 +542,13 @@ impl App {
                                 },
                             ));
                         }
-                        DebugTarget::Pwndbg => {
+                        DebugTarget::GdbTerminal { terminal } => {
                             let exec_wrapper = storage::debugger_exec_wrapper_command(&wrapper);
                             self.pending_editor = Some((
                                 binary.clone(),
                                 EditorLaunch::TerminalArgs {
                                     command: self.cfg.debug.debugger_command.clone(),
-                                    terminal: self.cfg.debug.debugger_terminal.clone(),
+                                    terminal: terminal.clone(),
                                     args: vec![
                                         "-ex".to_string(),
                                         exec_wrapper,
@@ -558,12 +558,12 @@ impl App {
                             ));
                         }
                     }
-                    self.status = match target {
+                    self.status = match &target {
                         DebugTarget::Zed => format!(
                             "Testcase ready; Zed profile available: cptui: Debug selected testcase"
                         ),
-                        DebugTarget::Pwndbg => format!(
-                            "Pwndbg ready for testcase {problem_id}; set breakpoints, then run"
+                        DebugTarget::GdbTerminal { .. } => format!(
+                            "GDB ready for testcase {problem_id}; set breakpoints, then run"
                         ),
                     };
                 }
@@ -846,7 +846,7 @@ fn debug_job(cfg: &Config, req: &DebugRequest, tx: mpsc::Sender<AppEvent>) {
         problem_id: req.problem_id.clone(),
         source: req.source.clone(),
         problem_dir: req.problem_dir.clone(),
-        target: req.target,
+        target: req.target.clone(),
         wrapper: wrapper_path,
         binary: binary_path,
     });
