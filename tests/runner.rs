@@ -70,6 +70,24 @@ int main(){ int x=0; cout<<10/x<<"\n"; return 0; }
 }
 
 #[test]
+fn compiler_debug_builds_separate_binary() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("main.cpp");
+    std::fs::write(&src, "int main() { return 0; }").unwrap();
+    let bin = tmp.path().join("debug").join("solution");
+    let cfg = Config::default();
+    let res = cptui::compiler::compile_debug(&cfg, &bin, &src).unwrap();
+    assert!(res.success, "compile stderr: {}", res.stderr);
+    assert!(bin.exists());
+    let sections = std::process::Command::new("readelf")
+        .args(["-S", bin.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let sections = String::from_utf8_lossy(&sections.stdout);
+    assert!(sections.contains(".debug_info"), "debug symbols missing");
+}
+
+#[test]
 fn compiler_ce() {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("main.cpp");

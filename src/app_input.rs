@@ -1,7 +1,7 @@
 //! Keyboard input handling for the App, split out for readability.
 
-use crate::app::RunRequest;
 use crate::app::{App, Dialog, Focus, TestField, View};
+use crate::app::{DebugRequest, JobRequest, RunRequest};
 use crate::model::{ProblemStatus, TestKind, Testcase, Verdict};
 use crate::storage;
 use crate::ui::text_editor::TextEditor;
@@ -234,6 +234,9 @@ impl App {
             KeyCode::Char('y') => {
                 self.duplicate_test();
             }
+            KeyCode::Char('D') => {
+                self.debug_selected_test();
+            }
             KeyCode::Enter => {
                 if n > 0 {
                     self.view = View::Result;
@@ -300,7 +303,7 @@ impl App {
             }
         }
         if let Some(tx) = &self.run_tx {
-            let _ = tx.send(req);
+            let _ = tx.send(JobRequest::Run(req));
             self.status = format!(
                 "Running {}…",
                 if all { "all tests" } else { "selected test" }
@@ -427,7 +430,37 @@ impl App {
             let _ = std::fs::write(&source, storage::CPP_TEMPLATE);
         }
         let command = self.cfg.editors.zed.clone();
-        self.pending_editor = Some((source, crate::app::EditorLaunch::Direct { command }));
+        self.pending_editor = Some((
+            source,
+            crate::app::EditorLaunch::Direct {
+                command,
+                args: Vec::new(),
+            },
+        ));
+    }
+
+    /// Prepare currently selected testcase for Zed DAP debugging.
+    fn debug_selected_test(&mut self) {
+        let Some(p) = self.current_problem() else {
+            self.status = "No problem selected".into();
+            return;
+        };
+        let Some(tc) = p.testcases.get(self.sel_test) else {
+            self.status = "Select a testcase first".into();
+            return;
+        };
+        let request = DebugRequest {
+            problem_id: p.meta.id.clone(),
+            source: p.source_path(),
+            problem_dir: p.dir.clone(),
+            input: tc.input.clone(),
+        };
+        if let Some(tx) = &self.run_tx {
+            let _ = tx.send(JobRequest::Debug(request));
+            self.status = format!("Preparing testcase {} for debugger…", self.sel_test + 1);
+        } else {
+            self.status = "runner not ready".into();
+        }
     }
 
     fn open_url(&mut self) {
@@ -641,6 +674,7 @@ impl App {
         vec![
             "Run all tests",
             "Run selected test",
+            "Debug selected testcase",
             "Add testcase",
             "Edit testcase",
             "Add problem",
@@ -664,6 +698,7 @@ impl App {
         match cmds[idx] {
             "Run all tests" => self.dispatch_run(true),
             "Run selected test" => self.dispatch_run(false),
+            "Debug selected testcase" => self.debug_selected_test(),
             "Add testcase" => {
                 self.dialog = Dialog::AddTestcase {
                     input: TextEditor::new(String::new()),

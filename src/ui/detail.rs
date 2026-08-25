@@ -254,6 +254,7 @@ fn help_lines() -> Vec<Line<'static>> {
     lines.push(section("Running"));
     lines.push(h("r", "run selected testcase"));
     lines.push(h("R", "run all testcases"));
+    lines.push(h("D", "debug selected testcase in Zed with Pwndbg"));
     lines.push(section("Testcases"));
     lines.push(h("a", "add testcase (custom)"));
     lines.push(h("e", "edit selected testcase"));

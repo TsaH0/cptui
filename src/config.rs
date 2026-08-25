@@ -18,6 +18,8 @@ pub struct Config {
     pub cpp: CppConfig,
     #[serde(default)]
     pub runner: RunnerConfig,
+    #[serde(default)]
+    pub debug: DebugConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +186,34 @@ fn default_overhead() -> f64 {
     1.0
 }
 
+fn default_debug_adapter() -> String {
+    "GDB".to_string()
+}
+
+fn default_debugger_command() -> String {
+    "pwndbg".to_string()
+}
+
+/// Configuration for Zed's DAP debug handoff.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugConfig {
+    /// Zed debug adapter label.
+    #[serde(default = "default_debug_adapter")]
+    pub adapter: String,
+    /// GDB-compatible command used by Zed. Defaults to Pwndbg, not vanilla GDB.
+    #[serde(default = "default_debugger_command")]
+    pub debugger_command: String,
+}
+
+impl Default for DebugConfig {
+    fn default() -> Self {
+        Self {
+            adapter: default_debug_adapter(),
+            debugger_command: default_debugger_command(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -193,6 +223,7 @@ impl Default for Config {
             companion: CompanionConfig::default(),
             cpp: CppConfig::default(),
             runner: RunnerConfig::default(),
+            debug: DebugConfig::default(),
         }
     }
 }

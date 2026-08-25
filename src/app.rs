@@ -84,6 +84,14 @@ pub enum AppEvent {
     },
     /// All requested tests finished for a problem.
     RunFinished { problem_id: String },
+    /// Debug binary and selected testcase input are ready for Zed.
+    DebugReady {
+        problem_id: String,
+        source: PathBuf,
+        problem_dir: PathBuf,
+    },
+    /// Debug preparation failed.
+    DebugFailed { problem_id: String, message: String },
 }
 
 /// How an editor should be launched for a source file.
@@ -93,9 +101,9 @@ pub enum EditorLaunch {
     InPlace { command: String },
     /// Spawn `<terminal> -e <command> <file>` detached in a new window (non-blocking).
     Terminal { command: String, terminal: String },
-    /// Spawn `<command> <file>` detached (e.g. `zed <file>` opens a tab in the
-    /// running editor; non-blocking, no terminal wrapper).
-    Direct { command: String },
+    /// Spawn `<command> <args>` detached (e.g. `zed <file>` opens a tab in
+    /// the running editor; non-blocking, no terminal wrapper).
+    Direct { command: String, args: Vec<String> },
 }
 
 /// A request to compile and run tests for a problem.
@@ -106,6 +114,20 @@ pub(crate) struct RunRequest {
     pub binary: PathBuf,
     /// (index, input, expected, timeout_ms) for each test to run.
     pub tests: Vec<(usize, String, String, u64)>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DebugRequest {
+    pub problem_id: String,
+    pub source: PathBuf,
+    pub problem_dir: PathBuf,
+    pub input: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum JobRequest {
+    Run(RunRequest),
+    Debug(DebugRequest),
 }
 
 /// Persisted session state (paths + selection + contest).
@@ -144,10 +166,9 @@ pub struct App {
     /// be fully repainted after the editor exits. Holds the source path plus
     /// the editor command to run.
     pub pending_editor: Option<(PathBuf, EditorLaunch)>,
-    /// (source path, editor command, terminal emulator to launch it in; "" = in-place).
     companion_rx: Option<tmpsc::UnboundedReceiver<CompanionEvent>>,
     result_rx: mpsc::Receiver<AppEvent>,
-    pub(crate) run_tx: Option<tmpsc::UnboundedSender<RunRequest>>,
+    pub(crate) run_tx: Option<tmpsc::UnboundedSender<JobRequest>>,
 }
 
 impl App {
@@ -209,14 +230,17 @@ impl App {
         }
 
         // Runner worker: owns a tokio mpsc receiver and the config for compiling.
-        let (run_tx, mut run_rx) = tmpsc::unbounded_channel::<RunRequest>();
+        let (run_tx, mut run_rx) = tmpsc::unbounded_channel::<JobRequest>();
         self.run_tx = Some(run_tx);
         let worker_cfg = self.cfg.clone();
         runtime.spawn(async move {
-            while let Some(req) = run_rx.recv().await {
+            while let Some(job) = run_rx.recv().await {
                 let tx = result_tx.clone();
                 let cfg = worker_cfg.clone();
-                tokio::task::spawn_blocking(move || run_job(&cfg, &req, tx));
+                tokio::task::spawn_blocking(move || match job {
+                    JobRequest::Run(req) => run_job(&cfg, &req, tx),
+                    JobRequest::Debug(req) => debug_job(&cfg, &req, tx),
+                });
             }
         });
 
@@ -279,7 +303,7 @@ impl App {
             EditorLaunch::Terminal { command, terminal } => {
                 self.launch_editor_in_terminal(src, command, terminal)
             }
-            EditorLaunch::Direct { command } => self.launch_direct(src, command),
+            EditorLaunch::Direct { command, args } => self.launch_direct(src, command, args),
             EditorLaunch::InPlace { command } => self.launch_editor_inplace(guard, src, command),
         }
     }
@@ -332,14 +356,25 @@ impl App {
 
     /// Spawn `command src` detached (e.g. `zed <file>` opens a tab in the
     /// running editor). Non-blocking: the TUI keeps running.
-    fn launch_direct(&mut self, src: PathBuf, command: String) -> io::Result<()> {
+    fn launch_direct(
+        &mut self,
+        src: PathBuf,
+        command: String,
+        args: Vec<String>,
+    ) -> io::Result<()> {
         use std::os::unix::process::CommandExt;
         if crate::config::which(&command).is_none() {
             self.status = format!("{command} not found in PATH");
             return Ok(());
         }
+        let has_args = !args.is_empty();
         let mut cmd = Command::new(&command);
-        cmd.arg(&src);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        if !has_args {
+            cmd.arg(&src);
+        }
         cmd.process_group(0);
         match cmd.spawn() {
             Ok(_child) => {
@@ -457,6 +492,31 @@ impl App {
                         let (pass, total) = p.pass_count();
                         self.status = format!("{problem_id}: done ({pass}/{total} passed)");
                     }
+                }
+                AppEvent::DebugReady {
+                    problem_id,
+                    source,
+                    problem_dir,
+                } => {
+                    self.pending_editor = Some((
+                        source.clone(),
+                        EditorLaunch::Direct {
+                            command: self.cfg.editors.zed.clone(),
+                            args: vec![
+                                "--existing".to_string(),
+                                problem_dir.display().to_string(),
+                                source.display().to_string(),
+                            ],
+                        },
+                    ));
+                    self.status =
+                        format!("Debug testcase ready for {problem_id}; start cptui debug in Zed");
+                }
+                AppEvent::DebugFailed {
+                    problem_id,
+                    message,
+                } => {
+                    self.status = format!("Debug {problem_id} failed: {message}");
                 }
             }
         }
@@ -647,6 +707,90 @@ fn run_job(cfg: &Config, req: &RunRequest, tx: mpsc::Sender<AppEvent>) {
     }
     let _ = tx.send(AppEvent::RunFinished {
         problem_id: req.problem_id.clone(),
+    });
+}
+
+fn debug_job(cfg: &Config, req: &DebugRequest, tx: mpsc::Sender<AppEvent>) {
+    use crate::compiler;
+
+    let debug_dir = req.problem_dir.join(".cptui").join("debug");
+    let input_path = debug_dir.join("input.txt");
+    let binary_path = debug_dir.join("main");
+
+    if crate::config::which(&cfg.debug.debugger_command).is_none() {
+        let _ = tx.send(AppEvent::DebugFailed {
+            problem_id: req.problem_id.clone(),
+            message: format!(
+                "debugger '{}' not found in PATH",
+                cfg.debug.debugger_command
+            ),
+        });
+        return;
+    }
+
+    if let Err(e) =
+        std::fs::create_dir_all(&debug_dir).and_then(|_| std::fs::write(&input_path, &req.input))
+    {
+        let _ = tx.send(AppEvent::DebugFailed {
+            problem_id: req.problem_id.clone(),
+            message: format!("writing selected testcase: {e}"),
+        });
+        return;
+    }
+
+    // Never leave a stale debug executable after a failed rebuild.
+    let _ = std::fs::remove_file(&binary_path);
+    let compile = match compiler::compile_debug(cfg, &binary_path, &req.source) {
+        Ok(result) => result,
+        Err(e) => {
+            let _ = tx.send(AppEvent::DebugFailed {
+                problem_id: req.problem_id.clone(),
+                message: format!("starting compiler: {e}"),
+            });
+            return;
+        }
+    };
+    if !compile.success {
+        let message = if compile.stderr.is_empty() {
+            compile.stdout
+        } else {
+            compile.stderr
+        };
+        let _ = tx.send(AppEvent::DebugFailed {
+            problem_id: req.problem_id.clone(),
+            message,
+        });
+        return;
+    }
+
+    let wrapper_path = match storage::write_debug_stdin_wrapper(&req.problem_dir, &input_path) {
+        Ok(path) => path,
+        Err(e) => {
+            let _ = tx.send(AppEvent::DebugFailed {
+                problem_id: req.problem_id.clone(),
+                message: format!("writing debugger stdin wrapper: {e}"),
+            });
+            return;
+        }
+    };
+    if let Err(e) = storage::write_zed_debug_config(
+        &req.problem_dir,
+        &cfg.debug.adapter,
+        &cfg.debug.debugger_command,
+        &binary_path,
+        &wrapper_path,
+    ) {
+        let _ = tx.send(AppEvent::DebugFailed {
+            problem_id: req.problem_id.clone(),
+            message: format!("writing Zed debug config: {e}"),
+        });
+        return;
+    }
+
+    let _ = tx.send(AppEvent::DebugReady {
+        problem_id: req.problem_id.clone(),
+        source: req.source.clone(),
+        problem_dir: req.problem_dir.clone(),
     });
 }
 

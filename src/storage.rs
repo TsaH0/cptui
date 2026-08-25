@@ -85,6 +85,76 @@ pub fn save_contest_meta(contest_dir: &Path, meta: &ContestMeta) -> Result<()> {
     Ok(())
 }
 
+/// Write/update the per-problem Zed DAP profile for the selected testcase.
+/// Existing debug profiles are preserved; only cptui's profile is replaced.
+pub fn write_debug_stdin_wrapper(problem_dir: &Path, input: &Path) -> Result<PathBuf> {
+    let debug_dir = problem_dir.join(".cptui").join("debug");
+    std::fs::create_dir_all(&debug_dir)?;
+    let wrapper = debug_dir.join("stdin-wrapper.sh");
+    let script = format!(
+        "#!/bin/sh\nexec \"$@\" < {}\n",
+        shell_quote(input.to_string_lossy().as_ref())
+    );
+    std::fs::write(&wrapper, script)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&wrapper)?.permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&wrapper, permissions)?;
+    }
+    Ok(wrapper)
+}
+
+pub fn write_zed_debug_config(
+    problem_dir: &Path,
+    adapter: &str,
+    debugger_command: &str,
+    binary: &Path,
+    wrapper: &Path,
+) -> Result<()> {
+    let zed_dir = problem_dir.join(".zed");
+    std::fs::create_dir_all(&zed_dir)?;
+    let path = zed_dir.join("debug.json");
+    let label = "cptui: Debug selected testcase";
+
+    let mut profiles = if path.exists() {
+        let raw = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading Zed debug config {}", path.display()))?;
+        serde_json::from_str::<serde_json::Value>(&raw)
+            .with_context(|| format!("parsing Zed debug config {}", path.display()))?
+            .as_array()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Zed debug config must contain a JSON array"))?
+    } else {
+        Vec::new()
+    };
+    profiles.retain(|profile| profile.get("label").and_then(|v| v.as_str()) != Some(label));
+
+    let debugger =
+        config::which(debugger_command).unwrap_or_else(|| PathBuf::from(debugger_command));
+    profiles.push(serde_json::json!({
+        "label": label,
+        "adapter": adapter,
+        "request": "launch",
+        "program": binary.display().to_string(),
+        "cwd": problem_dir.display().to_string(),
+        "gdb_path": debugger.display().to_string(),
+        "gdb_args": [
+            "-ex",
+            format!("set exec-wrapper {}", shell_quote(wrapper.to_string_lossy().as_ref()))
+        ],
+        "stopOnEntry": false
+    }));
+    let raw = serde_json::to_string_pretty(&profiles)?;
+    std::fs::write(&path, format!("{raw}\n"))?;
+    Ok(())
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 /// Index entry mapping a testcase number to its kind. Stored as JSON so the
 /// Sample/Custom distinction survives reloads even though the files on disk are
 /// numbered.

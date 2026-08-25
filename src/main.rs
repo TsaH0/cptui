@@ -97,6 +97,11 @@ fn doctor(paths: &config::Paths, cfg: &config::Config) -> Result<()> {
     check_tool("clang-format", "clang-format");
 
     println!();
+    println!("debugger:");
+    println!("  adapter: {}", cfg.debug.adapter);
+    check_tool("  debugger", cfg.debug.debugger_command.as_str());
+
+    println!();
     println!("editors:");
     check_editor_pair("o (Helix)", &cfg.editors.helix, &cfg.editors.helix_terminal);
     check_editor_pair(
@@ -104,6 +109,7 @@ fn doctor(paths: &config::Paths, cfg: &config::Config) -> Result<()> {
         &cfg.editors.neovim,
         &cfg.editors.neovim_terminal,
     );
+    check_tool("z (Zed)", cfg.editors.zed.as_str());
     println!("  (a non-empty terminal launches the editor in its own window, non-blocking)");
 
     println!();

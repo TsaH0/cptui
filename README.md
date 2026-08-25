@@ -28,7 +28,8 @@ Competitive Companion, in your terminal.
 - **Verdicts**: `AC` / `WA` / `TLE` / `RE` / `CE`, with Input/Expected/Output/Diff/stderr inspection.
 - **Judge** — normalizes CRLF, trailing whitespace, trailing blank lines; token-wise compare.
 - **Sessions** persist across restarts (selected problem/test, ordering, status).
-- **Editor launch** — `o` opens `main.cpp` in Helix (footclient window), `v` in Neovim (alacritty window); each opens in its own terminal window, non-blocking. Configurable per editor.
+- **Editor launch** — `o` opens `main.cpp` in Helix (footclient window), `v` in Neovim (alacritty window), and `z` in Zed; each is non-blocking. Configurable per editor.
+- **Per-testcase debugging** — In Tests view, `D` writes only currently selected testcase input to `<problem>/.cptui/debug/input.txt` (overwriting it only on `D`), builds a separate `-g -O0` binary, updates `.zed/debug.json`, and opens the source in Zed. Generated GDB profile uses Pwndbg.
 - **XDG paths** for config / cache / state / data.
 - Robust terminal handling (RAII + panic hook).
 
@@ -64,6 +65,20 @@ Then send a problem or contest from the
 [Competitive Companion](https://github.com/jmerle/competitive-companion) browser
 extension. Port `27121` is a CC default, so it works with no extra configuration.
 
+### Debug one testcase in Zed
+
+In the Tests view, select one testcase and press `D`. cptui:
+
+1. overwrites `<problem>/.cptui/debug/input.txt` with only that testcase's input;
+2. compiles `<problem>/.cptui/debug/main` with `-g -O0`;
+3. preserves other entries and writes `cptui: Debug selected testcase` to `<problem>/.zed/debug.json`;
+4. opens the source and problem directory in Zed.
+
+Start that profile from Zed's Debug/New Process UI. The generated profile uses
+Zed's `GDB` adapter with `/usr/bin/pwndbg` (or configured `debugger_command`),
+not vanilla GDB. Press `D` again after selecting another testcase; active debug
+sessions keep the input file they started with.
+
 ## Keybindings
 
 | Key | Action |
@@ -73,6 +88,7 @@ extension. Port `27121` is a CC default, so it works with no extra configuration
 | `1`–`4` | problems / tests / result / contest view |
 | `Enter` | select / open detail |
 | `r` / `R` | run selected test / run all |
+| `D` | write selected testcase, build debug binary, and open Zed debugger profile |
 | `a`/`e`/`d`/`y` | add / edit / delete / duplicate testcase |
 | `o` | open source in Helix (footclient window) |
 | `v` | open source in Neovim (alacritty window) |
@@ -100,6 +116,11 @@ neovim_terminal = "alacritty"
 # `z` opens the source file directly inside Zed (a new tab in the running Zed).
 zed = "zed"
 
+[debug]
+# Zed adapter label. GDB profile uses Pwndbg as its GDB-compatible executable.
+adapter = "GDB"
+debugger_command = "pwndbg"
+
 [companion]
 enabled = true
 host = "127.0.0.1"
@@ -112,6 +133,7 @@ flags = ["-O2", "-Wall", "-Wextra", "-Wshadow", "-DLOCAL"]
 
 [runner]
 default_timeout_ms = 2000
+
 ```
 
 ## Architecture

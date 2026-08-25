@@ -134,6 +134,72 @@ fn companion_task_to_problem() {
     assert_eq!(samples[0].kind, TestKind::Sample);
 }
 
+#[test]
+fn zed_debug_config_writes_selected_input_profile() {
+    let tmp = TempDir::new().unwrap();
+    let problem = tmp.path().join("A");
+    std::fs::create_dir_all(&problem).unwrap();
+    let binary = problem.join(".cptui/debug/main");
+    let input = problem.join(".cptui/debug/input.txt");
+    std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+    std::fs::write(&input, "selected\\n").unwrap();
+    let wrapper = storage::write_debug_stdin_wrapper(&problem, &input).unwrap();
+    storage::write_zed_debug_config(&problem, "GDB", "pwndbg", &binary, &wrapper).unwrap();
+
+    let path = problem.join(".zed/debug.json");
+    let profiles: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let profile = &profiles[0];
+    assert_eq!(profile["label"], "cptui: Debug selected testcase");
+    assert_eq!(profile["adapter"], "GDB");
+    assert!(profile["gdb_path"].as_str().unwrap().ends_with("pwndbg"));
+    assert_eq!(profile["gdb_args"][0], "-ex");
+    assert!(profile["gdb_args"][1]
+        .as_str()
+        .unwrap()
+        .contains("set exec-wrapper"));
+    assert!(std::fs::read_to_string(&wrapper)
+        .unwrap()
+        .contains(&input.display().to_string()));
+}
+
+#[test]
+fn debug_stdin_wrapper_feeds_selected_input() {
+    let tmp = TempDir::new().unwrap();
+    let problem = tmp.path().join("path with spaces").join("A");
+    let input = problem.join(".cptui/debug/input.txt");
+    std::fs::create_dir_all(input.parent().unwrap()).unwrap();
+    std::fs::write(&input, "selected\\n").unwrap();
+    let wrapper = storage::write_debug_stdin_wrapper(&problem, &input).unwrap();
+    let output = std::process::Command::new(&wrapper)
+        .arg("/bin/cat")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"selected\\n");
+}
+
+#[test]
+fn zed_debug_config_preserves_other_profiles() {
+    let tmp = TempDir::new().unwrap();
+    let problem = tmp.path().join("A");
+    std::fs::create_dir_all(problem.join(".zed")).unwrap();
+    std::fs::write(
+        problem.join(".zed/debug.json"),
+        r#"[{"label":"Keep me","adapter":"GDB"}]"#,
+    )
+    .unwrap();
+    let binary = problem.join(".cptui/debug/main");
+    let input = problem.join(".cptui/debug/input.txt");
+    let wrapper = storage::write_debug_stdin_wrapper(&problem, &input).unwrap();
+    storage::write_zed_debug_config(&problem, "GDB", "pwndbg", &binary, &wrapper).unwrap();
+    let profiles: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(problem.join(".zed/debug.json")).unwrap())
+            .unwrap();
+    assert_eq!(profiles.as_array().unwrap().len(), 2);
+    assert_eq!(profiles[0]["label"], "Keep me");
+}
+
 // Provide Paths for completeness even though storage tests use cfg workspace.
 #[test]
 fn paths_xdg() {

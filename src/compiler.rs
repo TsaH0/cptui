@@ -22,6 +22,32 @@ pub struct CompileResult {
 /// The binary path is derived from the problem id so recompilation overwrites
 /// the previous binary (no stale state).
 pub fn compile(cfg: &Config, bin_path: &Path, source: &Path) -> Result<CompileResult> {
+    compile_with_flags(cfg, bin_path, source, cfg.cpp.flags.iter().cloned())
+}
+
+/// Compile an unoptimized debug binary with symbols and stable stack frames.
+/// User optimization flags are omitted so `-O2` cannot override `-O0`.
+pub fn compile_debug(cfg: &Config, bin_path: &Path, source: &Path) -> Result<CompileResult> {
+    let flags = cfg
+        .cpp
+        .flags
+        .iter()
+        .filter(|flag| !flag.starts_with("-O"))
+        .cloned()
+        .chain([
+            "-g".to_string(),
+            "-O0".to_string(),
+            "-fno-omit-frame-pointer".to_string(),
+        ]);
+    compile_with_flags(cfg, bin_path, source, flags)
+}
+
+fn compile_with_flags(
+    cfg: &Config,
+    bin_path: &Path,
+    source: &Path,
+    flags: impl IntoIterator<Item = String>,
+) -> Result<CompileResult> {
     if let Some(parent) = bin_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating bin dir {}", parent.display()))?;
@@ -29,7 +55,7 @@ pub fn compile(cfg: &Config, bin_path: &Path, source: &Path) -> Result<CompileRe
 
     let mut cmd = Command::new(&cfg.cpp.compiler);
     cmd.arg(format!("-std={}", cfg.cpp.standard));
-    for flag in &cfg.cpp.flags {
+    for flag in flags {
         cmd.arg(flag);
     }
     cmd.arg(source).arg("-o").arg(bin_path);

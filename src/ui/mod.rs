@@ -114,7 +114,7 @@ fn draw_body(f: &mut Frame, area: Rect, app: &mut App) {
 fn draw_keybar(f: &mut Frame, area: Rect, app: &App) {
     let hints: String = match app.view {
         View::Problems => "j/k select · Enter tests · o helix · v nvim · z zed · b url · n add · x remove · m status · R run all · 1-4 view · ? help · q quit".into(),
-        View::Tests => "j/k select · r run · R run all · a add · e edit · d del · y dup · Enter result · o helix · v nvim · z zed · ? help · q quit".into(),
+        View::Tests => "j/k select · r run · R run all · D debug · a add · e edit · d del · y dup · Enter result · o helix · v nvim · z zed · ? help · q quit".into(),
         View::Result => "j/k scroll · r run · R run all · Esc back · ? help · q quit".into(),
         View::Contest => "1-4 view · ? help · q quit".into(),
         View::Help => "j/k scroll · Esc close · q quit".into(),
