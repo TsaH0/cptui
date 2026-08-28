@@ -11,7 +11,7 @@ use crate::ui;
 use anyhow::Result;
 use crossterm::event::{self, Event};
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -53,6 +53,13 @@ pub enum Dialog {
     },
     /// Confirm deletion of a testcase.
     ConfirmDelete(usize),
+    /// Pick editor + tmux layout for the debugger session.
+    DebugTmux {
+        /// false = Helix, true = Neovim.
+        neovim: bool,
+        /// true = editor and GDB split as panes, false = separate windows.
+        pane: bool,
+    },
     /// Add a problem manually by name.
     AddProblem {
         name: String,
@@ -69,7 +76,14 @@ pub enum TestField {
 #[derive(Debug, Clone)]
 pub(crate) enum DebugTarget {
     Zed,
-    GdbTerminal { terminal: String },
+    GdbTerminal {
+        terminal: String,
+    },
+    /// Open editor + GDB inside tmux (pane split or separate windows).
+    Tmux {
+        editor: String,
+        pane: bool,
+    },
 }
 
 /// Async events delivered into the main loop from background tasks.
@@ -456,6 +470,133 @@ impl App {
         Ok(())
     }
 
+    /// Open editor + GDB inside tmux. Pane layout: one window with editor and
+    /// GDB side by side. Tab layout: editor and GDB in separate tmux windows.
+    /// Non-blocking; errors surface in the status bar.
+    fn launch_debug_in_tmux(
+        &mut self,
+        editor: String,
+        pane: bool,
+        source: &Path,
+        problem_dir: &Path,
+        binary: &Path,
+        wrapper: &Path,
+    ) {
+        if crate::config::which("tmux").is_none() {
+            self.status = "tmux not found in PATH".into();
+            return;
+        }
+        // Resolve hx -> helix fallback like the other editor launchers.
+        let editor_cmd = if editor == "hx" && crate::config::which("hx").is_none() {
+            "helix".to_string()
+        } else {
+            editor
+        };
+        if crate::config::which(&editor_cmd).is_none() {
+            self.status = format!("editor '{editor_cmd}' not found in PATH");
+            return;
+        }
+        let exec_wrapper = storage::debugger_exec_wrapper_command(wrapper);
+        let dir = problem_dir.display().to_string();
+        let src = source.display().to_string();
+        let bin = binary.display().to_string();
+        let debugger = self.cfg.debug.debugger_command.clone();
+        let name = format!(
+            "{}-debug",
+            problem_dir
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "cptui".into())
+        );
+
+        let gdb_window = |tmux_args: &[String]| -> io::Result<()> {
+            use std::os::unix::process::CommandExt;
+            let mut cmd = Command::new("tmux");
+            cmd.args(tmux_args);
+            cmd.process_group(0);
+            cmd.spawn().map(|_| ())
+        };
+
+        if pane {
+            // One window: GDB in the main pane, editor split to the right.
+            let out = Command::new("tmux")
+                .args([
+                    "new-window",
+                    "-P",
+                    "-F",
+                    "#{window_id}",
+                    "-n",
+                    &name,
+                    "-c",
+                    &dir,
+                    &debugger,
+                    "-ex",
+                    &exec_wrapper,
+                    &bin,
+                ])
+                .output();
+            match out {
+                Ok(out) if out.status.success() => {
+                    let window_id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    let split = Command::new("tmux")
+                        .args([
+                            "split-window",
+                            "-h",
+                            "-t",
+                            &window_id,
+                            "-c",
+                            &dir,
+                            &editor_cmd,
+                            &src,
+                        ])
+                        .spawn();
+                    match split {
+                        Ok(_) => {
+                            self.status = format!("Tmux pane: {editor_cmd} + GDB in window {name}")
+                        }
+                        Err(e) => self.status = format!("tmux split-window failed: {e}"),
+                    }
+                }
+                Ok(out) => {
+                    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    self.status = if err.is_empty() {
+                        "tmux new-window failed (is a tmux server running?)".into()
+                    } else {
+                        format!("tmux: {err}")
+                    };
+                }
+                Err(e) => self.status = format!("tmux failed: {e}"),
+            }
+        } else {
+            let editor_res = gdb_window(&[
+                "new-window".into(),
+                "-n".into(),
+                format!("{name}-edit"),
+                "-c".into(),
+                dir.clone(),
+                editor_cmd.clone(),
+                src.clone(),
+            ]);
+            let gdb_res = gdb_window(&[
+                "new-window".into(),
+                "-n".into(),
+                format!("{name}-gdb"),
+                "-c".into(),
+                dir.clone(),
+                debugger.clone(),
+                "-ex".into(),
+                exec_wrapper.clone(),
+                bin.clone(),
+            ]);
+            match (editor_res, gdb_res) {
+                (Ok(()), Ok(())) => {
+                    self.status = format!("Tmux windows: {editor_cmd} + GDB ({name})")
+                }
+                (Err(e), _) | (_, Err(e)) => self.status = format!("tmux failed: {e}"),
+            }
+        }
+    }
+
     fn drain_companion(&mut self) {
         // Collect first so the `rx` borrow of self ends before we call
         // self.import_problem (which needs `&mut self`).
@@ -550,6 +691,16 @@ impl App {
                                 },
                             ));
                         }
+                        DebugTarget::Tmux { editor, pane } => {
+                            self.launch_debug_in_tmux(
+                                editor.clone(),
+                                *pane,
+                                &source,
+                                &problem_dir,
+                                &binary,
+                                &wrapper,
+                            );
+                        }
                     }
                     self.status = match &target {
                         DebugTarget::Zed => {
@@ -559,6 +710,7 @@ impl App {
                         DebugTarget::GdbTerminal { .. } => format!(
                             "GDB ready for testcase {problem_id}; set breakpoints, then run"
                         ),
+                        DebugTarget::Tmux { .. } => "Tmux debugger session launched".to_string(),
                     };
                 }
                 AppEvent::DebugFailed {

@@ -78,7 +78,9 @@ Start that profile from Zed's Debug/New Process UI. The generated profile uses
 Zed's `GDB` adapter with configured `debugger_command` (default `gdb`).
 GDB's `exec-wrapper` redirects debuggee stdin from `input.txt`. For terminal
 debugging, press `P` for footclient or `A` for alacritty; cptui opens GDB with
-the same wrapper, so set breakpoints and run normally. Press `D`, `P`, or `A`
+the same wrapper, so set breakpoints and run normally. Press `T` to debug inside
+tmux: choose Helix or Neovim plus pane (one split window with editor + GDB) or
+windows (two tmux windows); GDB gets the same exec-wrapper stdin redirect. Press `D`, `P`, or `A`
 after selecting another testcase; active debug sessions keep their original input.
 
 ## Keybindings
@@ -93,6 +95,7 @@ after selecting another testcase; active debug sessions keep their original inpu
 | `D` | write selected testcase, build debug binary, and open Zed debugger profile |
 | `P` | write selected testcase, build debug binary, and open GDB in footclient |
 | `A` | write selected testcase, build debug binary, and open GDB in alacritty |
+| `T` | debug in tmux: pick Helix/Neovim and pane/windows layout |
 | `a`/`e`/`d`/`y` | add / edit / delete / duplicate testcase |
 | `o` | open source in Helix (footclient window) |
 | `v` | open source in Neovim (alacritty window) |

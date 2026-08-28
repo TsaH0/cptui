@@ -257,6 +257,7 @@ fn help_lines() -> Vec<Line<'static>> {
     lines.push(h("D", "debug selected testcase using Zed GDB DAP"));
     lines.push(h("P", "debug selected testcase in footclient GDB"));
     lines.push(h("A", "debug selected testcase in alacritty GDB"));
+    lines.push(h("T", "debug in tmux: pick Helix/Neovim + pane/windows"));
     lines.push(section("Testcases"));
     lines.push(h("a", "add testcase (custom)"));
     lines.push(h("e", "edit selected testcase"));

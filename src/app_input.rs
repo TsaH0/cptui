@@ -247,6 +247,12 @@ impl App {
                     terminal: self.cfg.debug.debugger_terminal_alt.clone(),
                 });
             }
+            KeyCode::Char('T') => {
+                self.dialog = Dialog::DebugTmux {
+                    neovim: false,
+                    pane: true,
+                };
+            }
             KeyCode::Enter => {
                 if n > 0 {
                     self.view = View::Result;
@@ -542,6 +548,25 @@ impl App {
                 KeyCode::Char('n') | KeyCode::Esc => close = true,
                 _ => {}
             },
+            Dialog::DebugTmux { neovim, pane } => match key.code {
+                KeyCode::Char('h') | KeyCode::Left => *neovim = false,
+                KeyCode::Char('l') | KeyCode::Right => *neovim = true,
+                KeyCode::Char('t') | KeyCode::Tab => *pane = !*pane,
+                KeyCode::Enter => {
+                    let editor = if *neovim {
+                        self.cfg.editors.neovim.clone()
+                    } else {
+                        self.cfg.editors.helix.clone()
+                    };
+                    self.debug_selected_test(DebugTarget::Tmux {
+                        editor,
+                        pane: *pane,
+                    });
+                    close = true;
+                }
+                KeyCode::Esc | KeyCode::Char('q') => close = true,
+                _ => {}
+            },
             Dialog::AddProblem { name } => match key.code {
                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != '\n' => {
                     name.push(c);
@@ -721,6 +746,12 @@ impl App {
                 self.debug_selected_test(DebugTarget::GdbTerminal {
                     terminal: self.cfg.debug.debugger_terminal_alt.clone(),
                 })
+            }
+            "Debug selected testcase in tmux (editor + GDB)" => {
+                self.dialog = Dialog::DebugTmux {
+                    neovim: false,
+                    pane: true,
+                };
             }
             "Add testcase" => {
                 self.dialog = Dialog::AddTestcase {
