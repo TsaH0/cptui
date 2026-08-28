@@ -1,6 +1,6 @@
 [package]
 name = "cptui"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 description = "A terminal-native competitive programming workspace"
 license = "MIT"

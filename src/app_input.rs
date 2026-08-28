@@ -253,6 +253,12 @@ impl App {
                     pane: true,
                 };
             }
+            KeyCode::Char('E') => {
+                self.dialog = Dialog::EditorTmux {
+                    neovim: false,
+                    pane: true,
+                };
+            }
             KeyCode::Enter => {
                 if n > 0 {
                     self.view = View::Result;
@@ -567,6 +573,28 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('q') => close = true,
                 _ => {}
             },
+            Dialog::EditorTmux { neovim, pane } => match key.code {
+                KeyCode::Char('h') | KeyCode::Left => *neovim = false,
+                KeyCode::Char('l') | KeyCode::Right => *neovim = true,
+                KeyCode::Char('t') | KeyCode::Tab => *pane = !*pane,
+                KeyCode::Enter => {
+                    let editor = if *neovim {
+                        self.cfg.editors.neovim.clone()
+                    } else {
+                        self.cfg.editors.helix.clone()
+                    };
+                    if let Some(p) = self.current_problem() {
+                        let source = p.source_path();
+                        if !source.exists() {
+                            let _ = std::fs::write(&source, storage::CPP_TEMPLATE);
+                        }
+                        self.launch_editor_in_tmux(editor, *pane, &source);
+                    }
+                    close = true;
+                }
+                KeyCode::Esc | KeyCode::Char('q') => close = true,
+                _ => {}
+            },
             Dialog::AddProblem { name } => match key.code {
                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != '\n' => {
                     name.push(c);
@@ -713,6 +741,8 @@ impl App {
             "Debug selected testcase in Zed",
             "Debug selected testcase in terminal",
             "Debug selected testcase in Alacritty",
+            "Debug selected testcase in tmux (editor + GDB)",
+            "Open editor in tmux (pane or window)",
             "Add testcase",
             "Edit testcase",
             "Add problem",
@@ -749,6 +779,12 @@ impl App {
             }
             "Debug selected testcase in tmux (editor + GDB)" => {
                 self.dialog = Dialog::DebugTmux {
+                    neovim: false,
+                    pane: true,
+                };
+            }
+            "Open editor in tmux (pane or window)" => {
+                self.dialog = Dialog::EditorTmux {
                     neovim: false,
                     pane: true,
                 };

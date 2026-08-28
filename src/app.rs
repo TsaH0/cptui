@@ -60,6 +60,13 @@ pub enum Dialog {
         /// true = editor and GDB split as panes, false = separate windows.
         pane: bool,
     },
+    /// Pick editor + tmux layout to open just the editor (no debugger).
+    EditorTmux {
+        /// false = Helix, true = Neovim.
+        neovim: bool,
+        /// true = split a pane in the current window, false = new window.
+        pane: bool,
+    },
     /// Add a problem manually by name.
     AddProblem {
         name: String,
@@ -468,6 +475,52 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Open just the editor in tmux: split a pane in the current window, or
+    /// open a new tmux window. Non-blocking; errors surface in the status bar.
+    pub(crate) fn launch_editor_in_tmux(&mut self, editor: String, pane: bool, source: &Path) {
+        if crate::config::which("tmux").is_none() {
+            self.status = "tmux not found in PATH".into();
+            return;
+        }
+        let editor_cmd = if editor == "hx" && crate::config::which("hx").is_none() {
+            "helix".to_string()
+        } else {
+            editor
+        };
+        if crate::config::which(&editor_cmd).is_none() {
+            self.status = format!("editor '{editor_cmd}' not found in PATH");
+            return;
+        }
+        let dir = source
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| ".".into());
+        let src = source.display().to_string();
+        let mut cmd = Command::new("tmux");
+        if pane {
+            cmd.args(["split-window", "-h", "-c", &dir, &editor_cmd, &src]);
+        } else {
+            let name = source
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|n| format!("{}-edit", n.to_string_lossy()))
+                .unwrap_or_else(|| "cptui-edit".into());
+            cmd.args(["new-window", "-n", &name, "-c", &dir, &editor_cmd, &src]);
+        }
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+        match cmd.spawn() {
+            Ok(_) => {
+                if let Some(p) = self.current_problem_mut() {
+                    p.dirty = true;
+                }
+                let where_ = if pane { "tmux pane" } else { "tmux window" };
+                self.status = format!("Opened {editor_cmd} in {where_}");
+            }
+            Err(e) => self.status = format!("tmux failed: {e}"),
+        }
     }
 
     /// Open editor + GDB inside tmux. Pane layout: one window with editor and

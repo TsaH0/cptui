@@ -40,6 +40,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Dialog::DebugTmux { neovim, pane } => {
             draw_debug_tmux(f, area, *neovim, *pane);
         }
+        Dialog::EditorTmux { neovim, pane } => {
+            draw_editor_tmux(f, area, *neovim, *pane);
+        }
         Dialog::AddProblem { name } => {
             draw_add_problem(f, area, name);
         }
@@ -240,6 +243,48 @@ fn draw_debug_tmux(f: &mut Frame, area: Rect, neovim: bool, pane: bool) {
             opt("Pane (t)", pane),
             Span::raw("  "),
             opt("Windows (t)", !pane),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Enter: launch · Esc: cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    f.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+fn draw_editor_tmux(f: &mut Frame, area: Rect, neovim: bool, pane: bool) {
+    let popup = crate::ui::centered_rect(60, 8, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Open editor in tmux")
+        .border_style(Style::default().fg(Color::Cyan));
+    let opt = |label: &str, active: bool| -> Span<'static> {
+        if active {
+            Span::styled(
+                format!("[{label}]"),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray))
+        }
+    };
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw(" Editor: "),
+            opt("Helix (h)", !neovim),
+            Span::raw("  "),
+            opt("Neovim (l)", neovim),
+        ]),
+        Line::from(vec![
+            Span::raw(" Layout: "),
+            opt("Pane (t)", pane),
+            Span::raw("  "),
+            opt("Window (t)", !pane),
         ]),
         Line::from(""),
         Line::from(Span::styled(
