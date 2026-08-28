@@ -128,6 +128,38 @@ impl App {
                 self.request_open_in_zed();
                 return;
             }
+            KeyCode::Char('E') => {
+                // Open the editor in a tmux pane/window (any view).
+                self.dialog = Dialog::EditorTmux {
+                    neovim: false,
+                    pane: true,
+                };
+                return;
+            }
+            KeyCode::Char('T') => {
+                // Debug editor + GDB in tmux (any view; needs a testcase).
+                self.dialog = Dialog::DebugTmux {
+                    neovim: false,
+                    pane: true,
+                };
+                return;
+            }
+            KeyCode::Char('D') => {
+                self.debug_selected_test(DebugTarget::Zed);
+                return;
+            }
+            KeyCode::Char('P') => {
+                self.debug_selected_test(DebugTarget::GdbTerminal {
+                    terminal: self.cfg.debug.debugger_terminal.clone(),
+                });
+                return;
+            }
+            KeyCode::Char('A') => {
+                self.debug_selected_test(DebugTarget::GdbTerminal {
+                    terminal: self.cfg.debug.debugger_terminal_alt.clone(),
+                });
+                return;
+            }
             KeyCode::Char('b') => {
                 self.open_url();
                 return;
@@ -233,31 +265,6 @@ impl App {
             }
             KeyCode::Char('y') => {
                 self.duplicate_test();
-            }
-            KeyCode::Char('D') => {
-                self.debug_selected_test(DebugTarget::Zed);
-            }
-            KeyCode::Char('P') => {
-                self.debug_selected_test(DebugTarget::GdbTerminal {
-                    terminal: self.cfg.debug.debugger_terminal.clone(),
-                });
-            }
-            KeyCode::Char('A') => {
-                self.debug_selected_test(DebugTarget::GdbTerminal {
-                    terminal: self.cfg.debug.debugger_terminal_alt.clone(),
-                });
-            }
-            KeyCode::Char('T') => {
-                self.dialog = Dialog::DebugTmux {
-                    neovim: false,
-                    pane: true,
-                };
-            }
-            KeyCode::Char('E') => {
-                self.dialog = Dialog::EditorTmux {
-                    neovim: false,
-                    pane: true,
-                };
             }
             KeyCode::Enter => {
                 if n > 0 {

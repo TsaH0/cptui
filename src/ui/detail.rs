@@ -251,7 +251,9 @@ fn help_lines() -> Vec<Line<'static>> {
     lines.push(h("Enter", "select / open detail"));
     lines.push(h("Esc", "back / close dialog"));
     lines.push(h("1/2/3/4", "problems / tests / result / contest view"));
-    lines.push(section("Running"));
+    lines.push(section(
+        "Running (work in any view; debug keys need a testcase)",
+    ));
     lines.push(h("r", "run selected testcase"));
     lines.push(h("R", "run all testcases"));
     lines.push(h("D", "debug selected testcase using Zed GDB DAP"));

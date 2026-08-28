@@ -82,7 +82,9 @@ the same wrapper, so set breakpoints and run normally. Press `T` to debug inside
 tmux: choose Helix or Neovim plus pane (one split window with editor + GDB) or
 windows (two tmux windows); GDB gets the same exec-wrapper stdin redirect.
 Press `E` to open just the editor in tmux without the debugger: pick Helix or
-Neovim, then pane (split beside your current pane) or window (new tmux window). Press `D`, `P`, or `A`
+Neovim, then pane (split beside your current pane) or window (new tmux window).
+`D`, `P`, `A`, `T`, and `E` work from any view (Problems, Tests, Result, Contest);
+debug keys fall back to the selected testcase and ask you to select one if none. Press `D`, `P`, or `A`
 after selecting another testcase; active debug sessions keep their original input.
 
 ## Keybindings

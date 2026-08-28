@@ -591,6 +591,10 @@ impl App {
             match out {
                 Ok(out) if out.status.success() => {
                     let window_id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if window_id.is_empty() {
+                        self.status = "tmux did not return a window id".into();
+                        return;
+                    }
                     let split = Command::new("tmux")
                         .args([
                             "split-window",
