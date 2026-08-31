@@ -29,11 +29,17 @@
 use crate::model::{ContestMeta, ProblemMeta, Testcase};
 use anyhow::Result;
 use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    extract::{DefaultBodyLimit, State},
+    http::{
+        header::{
+            ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
+            ACCESS_CONTROL_ALLOW_ORIGIN, ORIGIN,
+        },
+        HeaderMap, HeaderName, HeaderValue, StatusCode,
+    },
+    response::{IntoResponse, Response},
     routing::post,
-    Router,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -79,6 +85,58 @@ pub struct CompanionBatch {
     pub size: u64,
 }
 
+/// Current Codeforces problem, supplied by cptui's browser extension.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SolutionProblem {
+    #[serde(default = "default_solution_platform")]
+    pub platform: String,
+    pub contest_id: String,
+    pub index: String,
+    #[serde(default)]
+    pub title: String,
+}
+
+/// One downloaded source file. Extension has already selected its suffix.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SolutionFile {
+    pub handle: String,
+    pub submission_id: u64,
+    pub ext: String,
+    #[serde(default)]
+    pub source: String,
+    /// Present only for VJudge image-only source responses; OCR stays server-side.
+    #[serde(default)]
+    pub image_base64: Option<String>,
+    #[serde(default)]
+    pub image_mime: Option<String>,
+    /// OCR failure is saved beside the original image instead of writing empty code.
+    #[serde(default)]
+    pub ocr_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SolutionBatch {
+    pub problem: SolutionProblem,
+    pub files: Vec<SolutionFile>,
+}
+
+/// Extension stage, forwarded into cptui's visible footer.
+fn default_solution_platform() -> String {
+    "Codeforces".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SolutionProgress {
+    pub problem: SolutionProblem,
+    pub stage: String,
+    #[serde(default)]
+    pub completed: u64,
+    #[serde(default)]
+    pub total: u64,
+    #[serde(default)]
+    pub message: String,
+}
+
 /// Events sent from the HTTP server to the app.
 #[derive(Debug, Clone)]
 pub enum CompanionEvent {
@@ -88,6 +146,10 @@ pub enum CompanionEvent {
         batch_size: u64,
         index: u64,
     },
+    /// Browser extension says what it is currently doing.
+    SolutionProgress(SolutionProgress),
+    /// Browser extension finished a source batch ready for disk.
+    Solutions(SolutionBatch),
 }
 
 /// Shared server state: an mpsc sender to push events to the app and a running
@@ -111,26 +173,214 @@ pub fn spawn(host: &str, port: u16) -> Result<mpsc::UnboundedReceiver<CompanionE
 
     let app = Router::new()
         .route("/", post(handle_task))
+        .route(
+            "/solutions",
+            post(handle_solutions).options(solution_options),
+        )
+        .route(
+            "/solutions/progress",
+            post(handle_solution_progress).options(solution_options),
+        )
+        .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
         .with_state(state);
     let addr: std::net::SocketAddr = format!("{host}:{port}")
         .parse()
         .map_err(|e| anyhow::anyhow!("invalid bind address {host}:{port}: {e}"))?;
 
+    // Bind before returning so cptui can show a truthful listener state and
+    // fail startup instead of silently running without a browser receiver.
+    let listener = std::net::TcpListener::bind(addr)
+        .map_err(|e| anyhow::anyhow!("cannot bind companion server {addr}: {e}"))?;
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+
     let handle = tokio::runtime::Handle::current();
     handle.spawn(async move {
-        let listener = match tokio::net::TcpListener::bind(addr).await {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("[companion] failed to bind {addr}: {e}");
-                return;
-            }
-        };
         if let Err(e) = axum::serve(listener, app).await {
             eprintln!("[companion] server error: {e}");
         }
     });
 
     Ok(rx)
+}
+
+/// `cptui` listens only on localhost. With no pairing token, accept only the
+/// installed extension or a Codeforces page; reject arbitrary web origins.
+fn solution_cors(headers: &HeaderMap) -> Result<HeaderMap, StatusCode> {
+    let origin = headers
+        .get(ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .filter(|o| {
+            *o == "https://codeforces.com"
+                || *o == "https://www.codeforces.com"
+                || *o == "https://atcoder.jp"
+                || *o == "https://vjudge.net"
+                || (o.starts_with("https://")
+                    && (o.ends_with(".codeforces.com")
+                        || o.ends_with(".atcoder.jp")
+                        || o.ends_with(".vjudge.net")))
+                || o.starts_with("chrome-extension://")
+        })
+        .ok_or(StatusCode::FORBIDDEN)?;
+    let mut out = HeaderMap::new();
+    out.insert(
+        ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_str(origin).unwrap(),
+    );
+    out.insert(
+        ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("content-type"),
+    );
+    out.insert(
+        ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("POST, OPTIONS"),
+    );
+    out.insert(
+        HeaderName::from_static("access-control-allow-private-network"),
+        HeaderValue::from_static("true"),
+    );
+    Ok(out)
+}
+
+async fn solution_options(headers: HeaderMap) -> Response {
+    match solution_cors(&headers) {
+        Ok(cors) => (StatusCode::NO_CONTENT, cors).into_response(),
+        Err(code) => code.into_response(),
+    }
+}
+
+async fn resolve_ocr_sources(batch: &mut SolutionBatch) -> usize {
+    let mut failed = 0;
+    for file in &mut batch.files {
+        if !file.source.trim().is_empty() {
+            continue;
+        }
+        let result = match file.image_base64.as_deref() {
+            Some(image) => {
+                mistral_ocr(image, file.image_mime.as_deref().unwrap_or("image/png")).await
+            }
+            None => Err("source has neither text nor image".to_string()),
+        };
+        match result {
+            Ok(text) if !text.trim().is_empty() => file.source = text,
+            Ok(_) => {
+                file.ocr_error = Some("Mistral OCR returned no text".to_string());
+                failed += 1;
+            }
+            Err(error) => {
+                file.ocr_error = Some(error);
+                failed += 1;
+            }
+        }
+    }
+    failed
+}
+
+async fn mistral_ocr(image_base64: &str, mime: &str) -> Result<String, String> {
+    let key = mistral_key(std::env::var("MISTRAL_API_KEY").ok())?;
+    let body = serde_json::json!({
+        "model": "mistral-ocr-latest",
+        "document": {
+            "type": "image_url",
+            "image_url": format!("data:{mime};base64,{image_base64}"),
+        },
+        "include_image_base64": false,
+    });
+    let response = reqwest::Client::new()
+        .post("https://api.mistral.ai/v1/ocr")
+        .bearer_auth(key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Mistral OCR request failed: {e}"))?;
+    let status = response.status();
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Mistral OCR response was invalid JSON: {e}"))?;
+    if !status.is_success() {
+        let detail = value["message"].as_str().unwrap_or("request rejected");
+        return Err(format!("Mistral OCR HTTP {status}: {detail}"));
+    }
+    let markdown = value["pages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|page| page["markdown"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(strip_ocr_fence(&markdown))
+}
+
+fn mistral_key(value: Option<String>) -> Result<String, String> {
+    value
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(|| "MISTRAL_API_KEY is not set in the cptui process".to_string())
+}
+
+fn strip_ocr_fence(text: &str) -> String {
+    let text = text.trim();
+    if !text.starts_with("```") {
+        return text.to_string();
+    }
+    let mut lines = text.lines();
+    lines.next();
+    let mut body: Vec<&str> = lines.collect();
+    if body
+        .last()
+        .is_some_and(|line| line.trim_start().starts_with("```"))
+    {
+        body.pop();
+    }
+    body.join("\n")
+}
+
+async fn handle_solutions(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let cors = match solution_cors(&headers) {
+        Ok(cors) => cors,
+        Err(code) => return code.into_response(),
+    };
+    let mut batch: SolutionBatch = match serde_json::from_slice::<SolutionBatch>(&body) {
+        Ok(batch) if !batch.files.is_empty() => batch,
+        Ok(_) => {
+            return (StatusCode::BAD_REQUEST, cors, "no source files").into_response();
+        }
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, cors, format!("invalid JSON: {e}")).into_response();
+        }
+    };
+    let ocr_failed = resolve_ocr_sources(&mut batch).await;
+    let count = batch.files.len();
+    let _ = state.tx.send(CompanionEvent::Solutions(batch));
+    (
+        StatusCode::ACCEPTED,
+        cors,
+        Json(serde_json::json!({ "accepted": count, "ocr_failed": ocr_failed })),
+    )
+        .into_response()
+}
+
+async fn handle_solution_progress(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let cors = match solution_cors(&headers) {
+        Ok(cors) => cors,
+        Err(code) => return code.into_response(),
+    };
+    let progress: SolutionProgress = match serde_json::from_slice(&body) {
+        Ok(progress) => progress,
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, cors, format!("invalid JSON: {e}")).into_response();
+        }
+    };
+    let _ = state.tx.send(CompanionEvent::SolutionProgress(progress));
+    (StatusCode::NO_CONTENT, cors).into_response()
 }
 
 async fn handle_task(
@@ -265,6 +515,59 @@ pub fn contest_meta_for(name: &str, batch_id: &str) -> ContestMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::{header::ORIGIN, HeaderMap, HeaderValue};
+
+    #[test]
+    fn solutions_cors_allows_only_codeforces_or_extensions() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_static("https://www.codeforces.com"),
+        );
+        assert!(solution_cors(&headers).is_ok());
+        headers.insert(ORIGIN, HeaderValue::from_static("https://evil.example"));
+        assert_eq!(solution_cors(&headers).unwrap_err(), StatusCode::FORBIDDEN);
+        headers.insert(ORIGIN, HeaderValue::from_static("https://atcoder.jp"));
+        assert!(solution_cors(&headers).is_ok());
+        headers.insert(ORIGIN, HeaderValue::from_static("https://vjudge.net"));
+        assert!(solution_cors(&headers).is_ok());
+        headers.insert(ORIGIN, HeaderValue::from_static("chrome-extension://abc"));
+        assert!(solution_cors(&headers).is_ok());
+    }
+
+    #[tokio::test]
+    async fn solution_batch_enqueues_extension_payload() {
+        use axum::{body::Bytes, extract::State};
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let state = ServerState {
+            tx,
+            batch_counts: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(ORIGIN, HeaderValue::from_static("chrome-extension://test"));
+        let body = Bytes::from(
+            r#"{"problem":{"platform":"Codeforces","contest_id":"4","index":"A","title":"Watermelon"},"files":[{"handle":"Benq","submission_id":1,"ext":"cpp","source":"int main(){}"}]}"#,
+        );
+        let response = handle_solutions(State(state), headers, body).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        match rx.recv().await.unwrap() {
+            CompanionEvent::Solutions(batch) => {
+                assert_eq!(batch.problem.contest_id, "4");
+                assert_eq!(batch.files[0].handle, "Benq");
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn ocr_key_and_fence_validation() {
+        assert!(mistral_key(None).is_err());
+        assert_eq!(
+            strip_ocr_fence("```cpp\nint main() {}\n```"),
+            "int main() {}"
+        );
+        assert_eq!(strip_ocr_fence("plain text"), "plain text");
+    }
 
     #[test]
     fn parse_single_problem() {

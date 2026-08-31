@@ -119,10 +119,11 @@ fn draw_keybar(f: &mut Frame, area: Rect, app: &App) {
         View::Contest => "1-4 view · ? help · q quit".into(),
         View::Help => "j/k scroll · Esc close · q quit".into(),
     };
-    let mut line = hints;
-    if !app.status.is_empty() {
-        line = format!("{line}   │ {}", app.status);
-    }
+    let mut line = if app.status.is_empty() {
+        hints
+    } else {
+        format!("{}   │ {hints}", app.status)
+    };
     if let Some((_, a, t)) = &app.import_progress {
         line = format!("{line}   │ Importing contest {a}/{t}");
     }

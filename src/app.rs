@@ -1,7 +1,7 @@
 //! Central application state, async coordination, main event loop, and input
 //! handling.
 
-use crate::companion::{self, CompanionEvent, CompanionTask};
+use crate::companion::{self, CompanionEvent, CompanionTask, SolutionBatch, SolutionProgress};
 use crate::config::{Config, Paths};
 use crate::model::{Problem, ProblemStatus, TestResult, Verdict};
 use crate::runner;
@@ -9,6 +9,7 @@ use crate::storage;
 use crate::terminal::TerminalGuard;
 use crate::ui;
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use crossterm::event::{self, Event};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -259,6 +260,7 @@ impl App {
             let port = self.cfg.companion.port;
             let rx = companion::spawn(&host, port)?;
             self.companion_rx = Some(rx);
+            self.status = format!("Browser receiver listening: http://{host}:{port}/solutions");
         }
 
         // Runner worker: owns a tokio mpsc receiver and the config for compiling.
@@ -672,6 +674,12 @@ impl App {
                 } => {
                     self.import_problem(task, batch_size, index);
                 }
+                CompanionEvent::SolutionProgress(progress) => {
+                    self.show_solution_progress(progress);
+                }
+                CompanionEvent::Solutions(batch) => {
+                    self.import_solutions(batch);
+                }
             }
         }
     }
@@ -868,6 +876,101 @@ impl App {
             }
         }
         self.persist_session();
+    }
+
+    fn show_solution_progress(&mut self, progress: SolutionProgress) {
+        let count = if progress.total > 0 {
+            format!(" {}/{}", progress.completed, progress.total)
+        } else {
+            String::new()
+        };
+        let detail = if progress.message.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", progress.message)
+        };
+        self.status = format!("Solutions {}{}{}", progress.stage, count, detail);
+    }
+
+    /// Save browser sources under the user's requested disk layout, never
+    /// overwriting a previous submission id. cptui still owns progress/status;
+    /// source archive remains independent from cptui's editable main.cpp tree.
+    fn import_solutions(&mut self, batch: SolutionBatch) {
+        let platform = batch.problem.platform.clone();
+        let contest = batch.problem.contest_id.clone();
+        let index = batch.problem.index.clone();
+        let root = crate::config::workspace_path(&self.cfg).unwrap_or_else(|_| PathBuf::from("cp"));
+        let problem_name = if batch.problem.title.trim().is_empty() {
+            format!("{platform}-{contest}-{index}")
+        } else {
+            batch.problem.title.clone()
+        };
+        let dir = root
+            .join(crate::config::sanitize(&problem_name))
+            .join("solutions");
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.status = format!("Solutions write error: {e}");
+            return;
+        }
+
+        let mut written = 0;
+        let mut existing = 0;
+        for file in batch.files {
+            let ext = crate::config::sanitize(&file.ext);
+            let stem = format!(
+                "{}_{}",
+                crate::config::sanitize(&file.handle),
+                file.submission_id
+            );
+            if let Some(image) = &file.image_base64 {
+                let image_ext = match file.image_mime.as_deref() {
+                    Some("image/jpeg") => "jpg",
+                    Some("image/webp") => "webp",
+                    _ => "png",
+                };
+                let image_path = dir.join(format!("{stem}.{image_ext}"));
+                if !image_path.exists() {
+                    let bytes = match BASE64.decode(image) {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            self.status = format!("Solutions image decode error: {e}");
+                            return;
+                        }
+                    };
+                    if let Err(e) = std::fs::write(image_path, bytes) {
+                        self.status = format!("Solutions image write error: {e}");
+                        return;
+                    }
+                }
+            }
+            let effective_ext = if file.ocr_error.is_some() {
+                "ocr-error.txt"
+            } else {
+                ext.as_str()
+            };
+            let name = format!("{stem}.{effective_ext}");
+            let path = dir.join(name);
+            if path.exists() {
+                existing += 1;
+            } else {
+                let content = match &file.ocr_error {
+                    Some(error) => format!(
+                        "# OCR failed for {}. Original image saved beside this file.\n# {error}\n",
+                        file.submission_id
+                    ),
+                    None => file.source.clone(),
+                };
+                if let Err(e) = std::fs::write(&path, content) {
+                    self.status = format!("Solutions write error: {e}");
+                    return;
+                }
+                written += 1;
+            }
+        }
+        self.status = format!(
+            "Solutions saved: {written} new, {existing} existing → {}",
+            dir.display()
+        );
     }
 
     fn draw(&mut self, guard: &mut TerminalGuard) -> io::Result<()> {

@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "cptui Codeforces solutions",
+  "version": "0.2.0",
+  "description": "Fetch Codeforces, AtCoder, or VJudge solutions into the running cptui workspace.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "*://codeforces.com/*",
+    "*://*.codeforces.com/*",
+    "*://atcoder.jp/*",
+    "*://*.atcoder.jp/*",
+    "*://vjudge.net/*",
+    "*://*.vjudge.net/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [{
+    "matches": [
+      "*://codeforces.com/*", "*://*.codeforces.com/*",
+      "*://atcoder.jp/*", "*://*.atcoder.jp/*",
+      "*://vjudge.net/*", "*://*.vjudge.net/*"
+    ],
+    "js": ["core.js", "content.js"],
+    "run_at": "document_idle"
+  }],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html" }
+}

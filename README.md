@@ -30,6 +30,8 @@ Competitive Companion, in your terminal.
 - **Sessions** persist across restarts (selected problem/test, ordering, status).
 - **Editor launch** — `o` opens `main.cpp` in Helix (footclient window), `v` in Neovim (alacritty window), and `z` in Zed; each is non-blocking. Configurable per editor.
 - **Per-testcase debugging** — In Tests view, `D` prepares the selected testcase for Zed GDB DAP; `P` prepares it for GDB in footclient; `A` prepares it for GDB in alacritty. All overwrite `<problem>/.cptui/debug/input.txt` only when pressed and build a separate `-g -O0` binary.
+- **Top Codeforces solutions** — browser extension fetches top-rated accepted
+  sources into `<problem>/solutions/`, with progress visible in browser + TUI.
 - **XDG paths** for config / cache / state / data.
 - Robust terminal handling (RAII + panic hook).
 
@@ -64,6 +66,26 @@ cptui sessions        # list recent sessions
 Then send a problem or contest from the
 [Competitive Companion](https://github.com/jmerle/competitive-companion) browser
 extension. Port `27121` is a CC default, so it works with no extra configuration.
+
+### Top Codeforces / AtCoder / VJudge solutions
+
+Load `browser-extension/` in `chrome://extensions` once (Developer mode → Load
+unpacked). Keep cptui running, then open a Codeforces, AtCoder, or VJudge problem already imported
+through Competitive Companion and click extension **Fetch 30 solutions**. No token or
+second CLI: cptui's existing localhost server receives progress and files.
+Browser overlay shows `Discovering`, `Scanning`, `Fetching`, `Saving`, then
+`Done`; cptui footer mirrors those stages. Sources save into the cptui workspace as
+`~/cp/{problem_name}/solutions/{handle}_{submissionId}.{ext}` (or your
+configured `workspace` root).
+
+Codeforces selects highest-current-rated accepted solvers. AtCoder selects the
+30 highest **pre-contest-rated** participants who accepted the task, then saves
+their accepted source. VJudge saves the first 3 **open** sources in its
+problem leaderboard rank order; closed sources are deliberately skipped. You must
+be logged into AtCoder or VJudge for their submission and source pages. For
+VJudge image-only sources, set `MISTRAL_API_KEY` before launching cptui; cptui
+sends only that image to Mistral OCR, saves OCR text plus original image, and
+never exposes key to browser extension.
 
 ### Debug one testcase in Zed
 
