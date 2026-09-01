@@ -70,7 +70,7 @@
     running = true;
     controller = new AbortController();
     const { signal } = controller;
-    const target = problem.platform === 'VJudge' ? 3 : 30;
+    const target = 3; // all platforms: top 3 highest-rated accepted solutions
     problem.title = core.pageTitle(problem.platform);
     try {
       let files;
@@ -78,9 +78,6 @@
       else if (problem.platform === 'VJudge') files = await collectVJudge(problem, server, signal);
       else files = await collectCodeforces(problem, server, signal);
       if (!files.length) {
-        if (problem.platform === 'VJudge') {
-          throw new Error('VJudge returned no source text. Open leaderboard rows may expose only source images; text requires each author’s share-token URL.');
-        }
         throw new Error('No source pages were available. Log into the contest site and reload this tab once.');
       }
 
@@ -100,7 +97,7 @@
       if (signal.aborted || error?.name === 'AbortError') return;
       const message = error?.message || String(error);
       show(`cptui: ${message}`, true);
-      progress(server, problem, 'Failed', 0, 30, message, signal);
+      progress(server, problem, 'Failed', 0, target, message, signal);
     } finally {
       running = false;
       controller = undefined;
@@ -109,12 +106,12 @@
 
   async function collectCodeforces(problem, server, signal) {
     show('cptui: loading Codeforces rated users…');
-    progress(server, problem, 'Discovering', 0, 30, 'Loading rated users', signal);
+    progress(server, problem, 'Discovering', 0, 3, 'Loading rated users', signal);
     const rated = await cfTopRated(signal);
     const handles = new Set(rated.map((u) => u.handle.toLowerCase()));
     const accepted = new Map();
     const pageSize = 10000;
-    for (let from = 1, page = 1; accepted.size < 60 && page <= 6; page++, from += pageSize) {
+    for (let from = 1, page = 1; accepted.size < 6 && page <= 6; page++, from += pageSize) {
       show(`cptui: scanning Codeforces submissions (${page}/6)…`);
       progress(server, problem, 'Scanning', page, 6, `Scanning submission page ${page}`, signal);
       const subs = await cfApi('contest.status', { contestId: problem.contestId, from, count: pageSize }, signal);
@@ -124,12 +121,12 @@
       }
       if (subs.length < pageSize) break;
     }
-    const candidates = core.selectTop(accepted, rated, 60);
+    const candidates = core.selectTop(accepted, rated, 6);
     if (!candidates.length) throw new Error('No accepted submissions from top-rated users found.');
     return fetchSourceBatches(problem, server, candidates, signal, async (c) => {
       const response = await fetch(`/problemset/submission/${problem.contestId}/${c.id}`, { credentials: 'include', signal });
       return response.ok ? core.sourceFrom(await response.text()) : null;
-    });
+    }, 3);
   }
 
   async function collectAtCoder(problem, server, signal) {
@@ -140,26 +137,26 @@
     if (!standings?.StandingsData) {
       throw new Error('Could not read AtCoder standings. Log into AtCoder and reload this tab once.');
     }
-    const ranked = core.atCoderRatedUsers(standings, problem.index, 60);
+    const ranked = core.atCoderRatedUsers(standings, problem.index, 6);
     if (!ranked.length) throw new Error('No rated contest participants accepted this task.');
 
     const candidates = [];
-    for (let offset = 0; offset < ranked.length && candidates.length < 30; offset += 6) {
+    for (let offset = 0; offset < ranked.length && candidates.length < 3; offset += 6) {
       const users = ranked.slice(offset, offset + 6);
-      show(`cptui: locating AtCoder sources ${candidates.length}/30…`);
-      progress(server, problem, 'Scanning', candidates.length, 30, 'Locating accepted submissions for ranked users', signal);
+      show(`cptui: locating AtCoder sources ${candidates.length}/3…`);
+      progress(server, problem, 'Scanning', candidates.length, 3, 'Locating accepted submissions for ranked users', signal);
       const rows = await Promise.all(users.map(async (user) => {
         const query = new URLSearchParams({ 'f.Task': problem.index, 'f.Status': 'AC', 'f.User': user.handle });
         const response = await fetch(`/contests/${problem.contestId}/submissions?${query}`, { credentials: 'include', signal });
         return core.atCoderRows(await response.text())[0] || null;
       }));
-      rows.forEach((row) => { if (row && candidates.length < 30) candidates.push(row); });
+      rows.forEach((row) => { if (row && candidates.length < 3) candidates.push(row); });
     }
     if (!candidates.length) throw new Error('Could not locate accepted submissions for ranked AtCoder users.');
     return fetchSourceBatches(problem, server, candidates, signal, async (c) => {
       const response = await fetch(`/contests/${problem.contestId}/submissions/${c.id}`, { credentials: 'include', signal });
       return response.ok ? core.sourceFrom(await response.text()) : null;
-    });
+    }, 3);
   }
 
   function mainWorldFetch(request, signal) {
@@ -179,7 +176,7 @@
 
   async function collectVJudge(problem, server, signal) {
     show('cptui: reading VJudge leaderboard…');
-    progress(server, problem, 'Discovering', 0, 30, 'Reading ranked open submissions', signal);
+    progress(server, problem, 'Discovering', 0, 3, 'Reading ranked open submissions', signal);
     const query = new URLSearchParams({
       draw: '1', start: '0', length: '20', sortDir: 'asc', sortCol: '2', language: '', _: String(Date.now()),
     });

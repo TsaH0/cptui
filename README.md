@@ -71,15 +71,15 @@ extension. Port `27121` is a CC default, so it works with no extra configuration
 
 Load `browser-extension/` in `chrome://extensions` once (Developer mode → Load
 unpacked). Keep cptui running, then open a Codeforces, AtCoder, or VJudge problem already imported
-through Competitive Companion and click extension **Fetch 30 solutions**. No token or
+through Competitive Companion and click extension **Fetch top 3 solutions**. No token or
 second CLI: cptui's existing localhost server receives progress and files.
 Browser overlay shows `Discovering`, `Scanning`, `Fetching`, `Saving`, then
 `Done`; cptui footer mirrors those stages. Sources save into the cptui workspace as
 `~/cp/{problem_name}/solutions/{handle}_{submissionId}.{ext}` (or your
 configured `workspace` root).
 
-Codeforces selects highest-current-rated accepted solvers. AtCoder selects the
-30 highest **pre-contest-rated** participants who accepted the task, then saves
+Codeforces selects its 3 highest-current-rated accepted solvers. AtCoder selects
+the 3 highest **pre-contest-rated** participants who accepted the task, then saves
 their accepted source. VJudge saves the first 3 **open** sources in its
 problem leaderboard rank order; closed sources are deliberately skipped. You must
 be logged into AtCoder or VJudge for their submission and source pages. For
