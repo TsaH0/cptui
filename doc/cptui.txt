@@ -1,0 +1,129 @@
+*cptui.txt*  Competitive programming in Neovim: receive, run, fetch solutions
+
+==============================================================================
+CONTENTS                                                        *cptui.nvim*
+
+cptui.nvim brings the cptui workflow into Neovim:
+
+- receives problems and whole contests from Competitive Companion,
+- compiles and runs every testcase asynchronously (AC/WA/TLE/RE/CE),
+- lets you add, edit, delete and duplicate testcases in floating windows,
+- receives top-rated accepted solutions from the cptui browser extension
+  (Codeforces, AtCoder, VJudge) and saves them beside the problem.
+
+It reads and writes the same workspace layout as the cptui TUI, so you can
+switch between the two freely: >
+
+  ~/cp/[<contest>/]<id>/main.cpp
+                        tests/{1.in,1.out,...,tests.json}
+                        solutions/<handle>_<submission>.<ext>
+                        .cptui/problem.toml
+<
+Requires Neovim 0.10+ and `curl` (only for VJudge image OCR).
+
+==============================================================================
+SETUP                                                         *cptui-setup*
+
+With lazy.nvim: >lua
+
+  { 'TsaH0/cptui', opts = { receiver = { autostart = true } } }
+<
+All options with their defaults: >lua
+
+  require('cptui').setup({
+    workspace = '~/cp',
+    receiver = { host = '127.0.0.1', port = 27121, autostart = false },
+    open_on_receive = true,
+    open_cmd = 'edit',          -- or 'split', 'vsplit', 'tabedit'
+    source = 'main.cpp',
+    template_file = '<plugin>/src/template.cpp',
+    bin_dir = vim.fn.stdpath('cache') .. '/cptui/bin',
+    languages = {               -- keyed by file extension
+      cpp = { compile = { 'g++', '-std=c++20', '-O2', '-Wall', '-Wextra',
+                          '-Wshadow', '-DLOCAL', '$(FNAME)', '-o', '$(BIN)' },
+              run = { '$(BIN)' } },
+      py  = { run = { 'python3', '$(FNAME)' } },
+      -- also c, rs, java
+    },
+    runner = { default_timeout_ms = 2000, overhead_multiplier = 1.5 },
+    ui = { width = 0.85, height = 0.8, border = 'rounded' },
+    mistral_api_key = nil,      -- falls back to $MISTRAL_API_KEY
+  })
+<
+`$(FNAME)` is the source path, `$(BIN)` the cached binary and `$(DIR)` the
+problem directory.
+
+==============================================================================
+COMMANDS                                                       *:Cptui*
+
+:Cptui                  Run all tests if the buffer is inside a problem,
+                        otherwise start the receiver.
+:Cptui receive [start|stop|status]
+                        Listen for Competitive Companion and the browser
+                        extension on `receiver.host:receiver.port`.
+:Cptui run [n]          Save, compile and run all tests (or test n) and open
+                        the viewer.
+:Cptui show             Open the viewer with the last results.
+:Cptui add              Add a custom testcase.
+:Cptui edit [n]         Edit testcase n (default 1).
+:Cptui delete {n}       Delete testcase n.
+:Cptui solutions        Pick a fetched solution and open it in a vsplit.
+:Cptui next [n]         Open the next problem of the current contest.
+:Cptui prev [n]         Open the previous problem of the current contest.
+:Cptui open             Pick any problem in the workspace; problems of the
+                        current contest are listed first.
+:Cptui url              Open the problem page in the browser.
+
+Suggested mappings: >lua
+
+  vim.keymap.set('n', ']p', '<cmd>Cptui next<cr>', { desc = 'cptui next problem' })
+  vim.keymap.set('n', '[p', '<cmd>Cptui prev<cr>', { desc = 'cptui prev problem' })
+  vim.keymap.set('n', '<leader>cr', '<cmd>Cptui run<cr>', { desc = 'cptui run' })
+<
+==============================================================================
+VIEWER                                                     *cptui-viewer*
+
+Left: testcases with verdict and time. Right: Input, Expected, Output and
+Stderr of the selected test. Differing output lines are highlighted on WA.
+
+  j/k       select test             r     run selected
+  R         run all                 a     add test
+  e         edit test               d     delete test
+  y         duplicate test          o     accept output as expected
+  <Tab>     next pane               q     close
+
+In the editor, `:w` saves and `q` saves and closes; <Tab> switches between
+Input and Expected.
+
+Highlight groups: CptuiAC CptuiWA CptuiTLE CptuiRE CptuiCE CptuiRunning.
+
+==============================================================================
+SOLUTIONS                                                 *cptui-solutions*
+
+1. Load `browser-extension/` from this repository in chrome://extensions
+   (Developer mode, Load unpacked).
+2. Start the receiver (`:Cptui receive`).
+3. On a Codeforces, AtCoder or VJudge problem page click the extension's
+   "Fetch top 3 solutions". Progress shows as notifications in Neovim.
+4. `:Cptui solutions` lists and opens what was saved.
+
+Sources go to `<problem>/solutions/` of the imported problem with the same
+URL, or to `<workspace>/<title>/solutions/` (the cptui TUI layout) when none
+matches. Existing files are never overwritten.
+
+The receiver uses the cptui TUI's default port. Run only one of the two, or
+give Neovim another port and enter `http://127.0.0.1:<port>` in the
+extension popup (and add the port to Competitive Companion's custom ports).
+
+==============================================================================
+EVENTS                                                       *cptui-events*
+
+User autocommands, with details in `data`:
+
+  CptuiProblemReceived    { dir, meta, index, size }
+  CptuiSolutionsSaved     { dir, files, problem }
+
+`require('cptui').status()` returns the last receiver message for a
+statusline.
+
+ vim:tw=78:ts=8:ft=help:norl:
