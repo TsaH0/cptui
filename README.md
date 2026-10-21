@@ -109,6 +109,41 @@ Neovim, then pane (split beside your current pane) or window (new tmux window).
 debug keys fall back to the selected testcase and ask you to select one if none. Press `D`, `P`, or `A`
 after selecting another testcase; active debug sessions keep their original input.
 
+## Neovim plugin
+
+This repository is also a Neovim plugin (Neovim 0.10+, no dependencies) that
+does the same job inside your editor, in the spirit of competitest.nvim, and
+can receive solutions from the browser extension. It uses the same workspace
+layout, so problems move freely between the TUI and Neovim.
+
+```lua
+-- lazy.nvim
+{ 'TsaH0/cptui', opts = { receiver = { autostart = true } } }
+```
+
+| Command | Action |
+|---------|--------|
+| `:Cptui receive [start\|stop\|status]` | listen for Competitive Companion + browser extension |
+| `:Cptui run [n]` | compile and run all tests (or test `n`), open the viewer |
+| `:Cptui show` | reopen the viewer with the last results |
+| `:Cptui add` / `edit [n]` / `delete n` | manage testcases |
+| `:Cptui solutions` | open a fetched solution in a vsplit |
+| `:Cptui open` / `url` | pick a workspace problem / open the problem page |
+
+The viewer shows the test list plus Input / Expected / Output / Stderr panes:
+`r`/`R` run selected/all, `a`/`e`/`d`/`y` add/edit/delete/duplicate,
+`o` accept output as expected, `<Tab>` next pane, `q` close. In the testcase
+editor `:w` saves and `q` saves and closes.
+
+To fetch solutions: load `browser-extension/`, start the receiver, then click
+**Fetch top 3 solutions** on the problem page. Progress appears as Neovim
+notifications, and sources are saved to the matching problem's `solutions/`
+directory. Neovim and the TUI both default to port `27121`. Run one of them at a
+time, or set `receiver.port` and put that URL in the extension popup. See
+`:help cptui` for all options (other languages, timeouts, OCR key).
+
+Run the plugin tests with `nvim --headless -u NONE -l tests/nvim/run.lua`.
+
 ## Keybindings
 
 | Key | Action |
