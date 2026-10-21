@@ -126,10 +126,20 @@ function M.commands.solutions()
   end)
 end
 
---- Pick any problem in the workspace and open its source.
+--- Pick any problem in the workspace and open its source. Problems of the
+--- current contest are listed first.
 function M.commands.open()
   local problems = storage.list_problems()
   if #problems == 0 then return err('no problems in ' .. config.workspace()) end
+  local current = storage.find_problem_dir(vim.api.nvim_buf_get_name(0))
+  if current then
+    local parent = vim.fs.dirname(current) .. '/'
+    local here, rest = {}, {}
+    for _, p in ipairs(problems) do
+      table.insert(vim.startswith(p.dir, parent) and here or rest, p)
+    end
+    problems = vim.list_extend(here, rest)
+  end
   local root = config.workspace() .. '/'
   vim.ui.select(problems, {
     prompt = 'cptui problems',
@@ -140,6 +150,27 @@ function M.commands.open()
     if p then open_file(p.dir .. '/' .. p.meta.source) end
   end)
 end
+
+--- Jump `step` problems within the current contest (A -> B with step 1).
+local function jump(step)
+  local dir = storage.find_problem_dir(vim.api.nvim_buf_get_name(0))
+  if not dir then return err('not inside a cptui problem') end
+  local list = storage.contest_problems(dir)
+  for i, p in ipairs(list) do
+    if p.dir == dir then
+      local target = list[i + step]
+      if not target then
+        return vim.notify(step > 0 and 'Already at the last problem' or 'Already at the first problem',
+          vim.log.levels.INFO, { title = 'cptui' })
+      end
+      return open_file(target.dir .. '/' .. target.meta.source)
+    end
+  end
+end
+
+function M.commands.next(arg) jump(tonumber(arg) or 1) end
+
+function M.commands.prev(arg) jump(-(tonumber(arg) or 1)) end
 
 function M.commands.url()
   local p = M.current_problem()

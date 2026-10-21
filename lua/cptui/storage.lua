@@ -207,6 +207,29 @@ function M.save_tests(dir, tests)
   write(tdir .. '/tests.json', vim.json.encode({ entries = entries }))
 end
 
+--- Sort key so problem 2 comes before 10 and A before B.
+local function natural(path)
+  return (path:gsub('%d+', function(d) return ('%012d'):format(tonumber(d)) end))
+end
+
+function M.sort_problems(list)
+  table.sort(list, function(a, b) return natural(a.dir) < natural(b.dir) end)
+  return list
+end
+
+--- Problems that share `dir`'s parent folder (a contest), in contest order.
+function M.contest_problems(dir)
+  local parent = vim.fs.dirname(dir)
+  local out = {}
+  for name, kind in vim.fs.dir(parent) do
+    if kind == 'directory' then
+      local p = M.load_problem(parent .. '/' .. name)
+      if p then out[#out + 1] = p end
+    end
+  end
+  return M.sort_problems(out)
+end
+
 --- Every problem directory in the workspace (problem or contest/problem).
 function M.list_problems()
   local root = config.workspace()
@@ -220,8 +243,7 @@ function M.list_problems()
       if p then out[#out + 1] = p end
     end
   end
-  table.sort(out, function(a, b) return a.dir < b.dir end)
-  return out
+  return M.sort_problems(out)
 end
 
 return M

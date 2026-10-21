@@ -68,9 +68,18 @@ COMMANDS                                                       *:Cptui*
 :Cptui edit [n]         Edit testcase n (default 1).
 :Cptui delete {n}       Delete testcase n.
 :Cptui solutions        Pick a fetched solution and open it in a vsplit.
-:Cptui open             Pick any problem in the workspace.
+:Cptui next [n]         Open the next problem of the current contest.
+:Cptui prev [n]         Open the previous problem of the current contest.
+:Cptui open             Pick any problem in the workspace; problems of the
+                        current contest are listed first.
 :Cptui url              Open the problem page in the browser.
 
+Suggested mappings: >lua
+
+  vim.keymap.set('n', ']p', '<cmd>Cptui next<cr>', { desc = 'cptui next problem' })
+  vim.keymap.set('n', '[p', '<cmd>Cptui prev<cr>', { desc = 'cptui prev problem' })
+  vim.keymap.set('n', '<leader>cr', '<cmd>Cptui run<cr>', { desc = 'cptui run' })
+<
 ==============================================================================
 VIEWER                                                     *cptui-viewer*
 

@@ -128,7 +128,12 @@ layout, so problems move freely between the TUI and Neovim.
 | `:Cptui show` | reopen the viewer with the last results |
 | `:Cptui add` / `edit [n]` / `delete n` | manage testcases |
 | `:Cptui solutions` | open a fetched solution in a vsplit |
-| `:Cptui open` / `url` | pick a workspace problem / open the problem page |
+| `:Cptui next` / `prev` | open the next / previous problem of the contest (A → B → C) |
+| `:Cptui open` / `url` | pick a problem (current contest first) / open the problem page |
+
+Receiving a contest creates every problem's folder and opens the first one;
+move between them with `:Cptui next` / `:Cptui prev`, e.g.
+`vim.keymap.set('n', ']p', '<cmd>Cptui next<cr>')`.
 
 The viewer shows the test list plus Input / Expected / Output / Stderr panes:
 `r`/`R` run selected/all, `a`/`e`/`d`/`y` add/edit/delete/duplicate,

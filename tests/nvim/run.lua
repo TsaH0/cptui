@@ -182,6 +182,35 @@ test('viewer and editor open', function()
   eq(storage.load_tests(workspace .. '/A')[3].kind, 'custom')
 end)
 
+test('next / prev move through the contest in order', function()
+  local base = workspace .. '/Codeforces-Beta-Round-4'
+  for _, name in ipairs({ 'C. Three', 'A. One', 'B10. Ten', 'B2. Two' }) do
+    local t = vim.json.decode(task)
+    t.name, t.batch = name, { id = 'contest', size = 2 }
+    eq(post('/', vim.json.encode(t)), 200)
+  end
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= '' then vim.api.nvim_win_close(w, true) end
+  end
+  vim.cmd('edit ' .. vim.fn.fnameescape(base .. '/A/main.cpp'))
+  local function at() return vim.fs.basename(vim.fs.dirname(vim.api.nvim_buf_get_name(0))) end
+  local seen = { at() }
+  for _ = 1, 5 do vim.cmd('Cptui next'); seen[#seen + 1] = at() end
+  eq(seen, { 'A', 'B', 'B2', 'B10', 'C', 'C' })
+  vim.cmd('Cptui prev 2')
+  eq(at(), 'B2')
+end)
+
+test('open lists the current contest first', function()
+  local items
+  local orig = vim.ui.select
+  vim.ui.select = function(list) items = list end
+  vim.cmd('Cptui open')
+  vim.ui.select = orig
+  eq(vim.fs.basename(vim.fs.dirname(items[1].dir)), 'Codeforces-Beta-Round-4')
+  eq(vim.fs.basename(items[#items].dir), 'A')
+end)
+
 receiver.stop()
 vim.fn.delete(workspace, 'rf')
 io.write(('\n%d passed, %d failed\n'):format(passed, failures))
